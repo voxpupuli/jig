@@ -1,7 +1,10 @@
 # {{.ModuleName}}
 
-Welcome to your new module. A short overview of the generated parts can be found
-in the [PDK documentation][1].
+Welcome to your new module.
+You can read more about the parts of a module in the [module documentation][docs].
+
+See the [DevKit guide][devkit] for information on how to run the built in tests or to configure and use optional functionality.
+If you want to use the GitHub Changelog Generator, you'll need to check the configuration in the `Rakefile`.
 
 The README template below provides a starting point with details about what
 information to include in your README.
@@ -68,7 +71,7 @@ tasks that involve different types, classes, and functions working in tandem.
 This section is deprecated. Instead, add reference information to your code as
 Puppet Strings comments, and then use Strings to generate a REFERENCE.md in your
 module. For details on how to add code comments and generate documentation with
-Strings, see the [Puppet Strings documentation][2] and [style guide][3].
+Strings, see the [Puppet Strings documentation][strings] and [style guide][style].
 
 If you aren't ready to use Strings yet, manually create a REFERENCE.md in the
 root of your module directory and list out each of your module's classes,
@@ -112,6 +115,7 @@ If you aren't using changelog, put your release notes here (though you should
 consider using changelog). You can also add any additional sections you feel are
 necessary or important to include here. Please use the `##` header.
 
-[1]: https://puppet.com/docs/pdk/latest/pdk_generating_modules.html
-[2]: https://puppet.com/docs/puppet/latest/puppet_strings.html
-[3]: https://puppet.com/docs/puppet/latest/puppet_strings_style.html
+[docs]: https://docs.openvoxproject.org/openvox/latest/modules_fundamentals.html
+[devkit]: https://docs.openvoxproject.org/ecosystem/latest/devkit/index.html
+[strings]: https://docs.openvoxproject.org/openvox/latest/modules_documentation.html
+[style]: https://docs.openvoxproject.org/openvox/latest/openvox_strings_style.html

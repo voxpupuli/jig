@@ -53,13 +53,16 @@ func NewModule(opts Options) error {
 		{FileName: "module/manifests/init.pp", Destination: filepath.Join(moduleDir, "manifests", "init.pp")},
 		{FileName: "module/README.md", Destination: filepath.Join(moduleDir, "README.md")},
 		{FileName: "module/CHANGELOG.md", Destination: filepath.Join(moduleDir, "CHANGELOG.md")},
-		{FileName: "module/spec/class_spec.rb", Destination: filepath.Join(moduleDir, "spec", "classes", "init_spec.rb")},
+		{FileName: "module/spec/init_spec.rb", Destination: filepath.Join(moduleDir, "spec", "classes", "init_spec.rb")},
 		{FileName: "module/Gemfile", Destination: filepath.Join(moduleDir, "Gemfile")},
 		{FileName: "module/Rakefile", Destination: filepath.Join(moduleDir, "Rakefile")},
+		{FileName: "module/editorconfig", Destination: filepath.Join(moduleDir, ".editorconfig")},
 		{FileName: "module/gitignore", Destination: filepath.Join(moduleDir, ".gitignore")},
+		{FileName: "module/overcommit.yml", Destination: filepath.Join(moduleDir, ".overcommit.yml")},
 		{FileName: "module/pdkignore", Destination: filepath.Join(moduleDir, ".pdkignore")},
 		{FileName: "module/rubocop.yml", Destination: filepath.Join(moduleDir, ".rubocop.yml")},
 		{FileName: "module/hiera.yaml", Destination: filepath.Join(moduleDir, "hiera.yaml")},
+		{FileName: "module/devcontainer/devcontainer.json", Destination: filepath.Join(moduleDir, ".devcontainer", "devcontainer.json")},
 		{FileName: "module/spec/spec_helper.rb", Destination: filepath.Join(moduleDir, "spec", "spec_helper.rb")},
 		{FileName: "module/spec/default_facts.yml", Destination: filepath.Join(moduleDir, "spec", "default_facts.yml")},
 		{FileName: "module/data/common.yaml", Destination: filepath.Join(moduleDir, "data", "common.yaml")},
@@ -72,11 +75,13 @@ func NewModule(opts Options) error {
 
 	data := struct {
 		ModuleName string
+		ForgeUser  string
 		Author     string
 		License    string
 		ClassName  string
 	}{
 		ModuleName: opts.Name,
+		ForgeUser:  opts.ForgeUser,
 		Author:     opts.Author,
 		License:    opts.License,
 		ClassName:  opts.Name,
