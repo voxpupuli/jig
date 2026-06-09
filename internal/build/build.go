@@ -97,6 +97,12 @@ func DoBuild(dir string) error {
 			return nil
 		}
 
+		// Skip symlinks
+		if d.Type()&fs.ModeSymlink != 0 {
+			fmt.Printf("warning: %s is a symlink, skipping\n", d.Name())
+			return nil
+		}
+
 		if d.IsDir() {
 			info, err := d.Info()
 			if err != nil {
