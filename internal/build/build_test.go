@@ -84,6 +84,29 @@ func writeFile(t *testing.T, dir, relPath, content string) {
 	}
 }
 
+// writeTestMetadata writes a minimal valid metadata.json into dir.
+func writeTestMetadata(t *testing.T, dir, forgeUser, moduleName, version string) {
+	t.Helper()
+	meta := map[string]any{
+		"name":                    forgeUser + "-" + moduleName,
+		"version":                 version,
+		"author":                  forgeUser,
+		"license":                 "Apache-2.0",
+		"summary":                 "test",
+		"source":                  "https://example.com",
+		"dependencies":            []any{},
+		"requirements":            []any{},
+		"operatingsystem_support": []any{},
+		"tags":                    []any{},
+		"pdk-version":             "3.4.0",
+	}
+	metaData, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, "metadata.json", string(metaData))
+}
+
 // archiveEntries opens a tar.gz file and returns the list of entry names.
 func archiveEntries(t *testing.T, path string) []string {
 	t.Helper()
@@ -274,58 +297,12 @@ func TestDoBuild_InvalidMetadata(t *testing.T) {
 	}
 }
 
-func TestDoBuild_MissingPdkIgnore(t *testing.T) {
-	dir := t.TempDir()
-
-	meta := map[string]any{
-		"name":                    "myuser-mymodule",
-		"version":                 "0.1.0",
-		"author":                  "myuser",
-		"license":                 "Apache-2.0",
-		"summary":                 "test",
-		"source":                  "https://example.com",
-		"dependencies":            []any{},
-		"requirements":            []any{},
-		"operatingsystem_support": []any{},
-		"tags":                    []any{},
-		"pdk-version":             "3.4.0",
-	}
-	metaData, err := json.Marshal(meta)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, dir, "metadata.json", string(metaData))
-	// No .pdkignore
-
-	err = DoBuild(dir)
-	if err == nil {
-		t.Error("expected error for missing .pdkignore, got nil")
-	}
-}
-
 func TestDoBuild_EmptyPdkIgnore(t *testing.T) {
 	// An empty .pdkignore is valid -- no patterns means nothing is excluded
 	// (except the hardcoded ones). The build should succeed.
 	dir := t.TempDir()
 
-	meta := map[string]any{
-		"name":                    "myuser-mymodule",
-		"version":                 "0.1.0",
-		"author":                  "myuser",
-		"license":                 "Apache-2.0",
-		"summary":                 "test",
-		"source":                  "https://example.com",
-		"dependencies":            []any{},
-		"requirements":            []any{},
-		"operatingsystem_support": []any{},
-		"tags":                    []any{},
-		"pdk-version":             "3.4.0",
-	}
-	metaData, err := json.Marshal(meta)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, dir, "metadata.json", string(metaData))
+	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
 	writeFile(t, dir, ".pdkignore", "")
 	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
 
@@ -339,24 +316,7 @@ func TestDoBuild_PdkIgnoreCommentsAndBlanks(t *testing.T) {
 	// same as an empty one.
 	dir := t.TempDir()
 
-	meta := map[string]any{
-		"name":                    "myuser-mymodule",
-		"version":                 "0.1.0",
-		"author":                  "myuser",
-		"license":                 "Apache-2.0",
-		"summary":                 "test",
-		"source":                  "https://example.com",
-		"dependencies":            []any{},
-		"requirements":            []any{},
-		"operatingsystem_support": []any{},
-		"tags":                    []any{},
-		"pdk-version":             "3.4.0",
-	}
-	metaData, err := json.Marshal(meta)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, dir, "metadata.json", string(metaData))
+	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
 	writeFile(t, dir, ".pdkignore", "# this is a comment\n\n# another comment\n")
 	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
 
@@ -410,5 +370,152 @@ func TestDoBuild_ArchiveName(t *testing.T) {
 				t.Errorf("expected archive at %s: %v", archivePath, err)
 			}
 		})
+	}
+}
+
+// --- ignore file fallback chain ---
+
+func TestDoBuild_PdkIgnoreTakesPrecedence(t *testing.T) {
+	// When both .pdkignore and .pmtignore exist, only .pdkignore patterns
+	// apply. Each file ignores a different sentinel so misuse is visible
+	// in the archive contents.
+	dir := t.TempDir()
+	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
+	writeFile(t, dir, ".pdkignore", "/exclude-pdk.txt\n/.pmtignore\n/.pdkignore\n")
+	writeFile(t, dir, ".pmtignore", "/exclude-pmt.txt\n")
+	writeFile(t, dir, "exclude-pdk.txt", "ignored by pdkignore")
+	writeFile(t, dir, "exclude-pmt.txt", "ignored only by pmtignore")
+	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
+
+	if err := DoBuild(dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	entries := archiveEntries(t, filepath.Join(dir, "pkg", "myuser-mymodule-0.1.0.tar.gz"))
+	if containsEntry(entries, "exclude-pdk.txt") {
+		t.Error("exclude-pdk.txt should have been excluded by .pdkignore")
+	}
+	if !containsEntry(entries, "exclude-pmt.txt") {
+		t.Error("exclude-pmt.txt was excluded, meaning .pmtignore patterns were applied despite .pdkignore being present")
+	}
+}
+
+func TestDoBuild_PmtIgnoreFallback(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
+	writeFile(t, dir, ".pmtignore", "/exclude-pmt.txt\n/.pmtignore\n")
+	writeFile(t, dir, "exclude-pmt.txt", "ignored by pmtignore")
+	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
+
+	if err := DoBuild(dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	entries := archiveEntries(t, filepath.Join(dir, "pkg", "myuser-mymodule-0.1.0.tar.gz"))
+	if containsEntry(entries, "exclude-pmt.txt") {
+		t.Error("exclude-pmt.txt should have been excluded by .pmtignore fallback")
+	}
+	if !containsEntry(entries, "manifests/init.pp") {
+		t.Error("manifests/init.pp should have been included")
+	}
+}
+
+func TestDoBuild_GitIgnoreFallback(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
+	writeFile(t, dir, ".gitignore", "/exclude-git.txt\n/.gitignore\n")
+	writeFile(t, dir, "exclude-git.txt", "ignored by gitignore")
+	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
+
+	if err := DoBuild(dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	entries := archiveEntries(t, filepath.Join(dir, "pkg", "myuser-mymodule-0.1.0.tar.gz"))
+	if containsEntry(entries, "exclude-git.txt") {
+		t.Error("exclude-git.txt should have been excluded by .gitignore fallback")
+	}
+	if !containsEntry(entries, "manifests/init.pp") {
+		t.Error("manifests/init.pp should have been included")
+	}
+}
+
+func TestDoBuild_NoIgnoreFileErrorNamesAllCandidates(t *testing.T) {
+	dir := t.TempDir()
+	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
+	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
+
+	err := DoBuild(dir)
+	if err == nil {
+		t.Fatal("expected error when no ignore file exists, got nil")
+	}
+	for _, name := range []string{".pdkignore", ".pmtignore", ".gitignore"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("error %q does not mention %s", err.Error(), name)
+		}
+	}
+}
+
+func TestDoBuild_UnreadableIgnoreFileDoesNotFallThrough(t *testing.T) {
+	// A read failure on an earlier candidate must surface as an error, not
+	// silently fall through to a later candidate. A directory named
+	// .pdkignore triggers a non-ENOENT read error without needing chmod
+	// tricks, which fail when tests run as root (e.g. in containers).
+	dir := t.TempDir()
+	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
+	if err := os.Mkdir(filepath.Join(dir, ".pdkignore"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, dir, ".gitignore", "/manifests/\n")
+	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
+
+	err := DoBuild(dir)
+	if err == nil {
+		t.Fatal("expected error for unreadable .pdkignore, but build succeeded, likely by falling through to .gitignore")
+	}
+	if !strings.Contains(err.Error(), ".pdkignore") {
+		t.Errorf("error %q does not mention .pdkignore", err.Error())
+	}
+}
+
+// --- readIgnoreFile ---
+
+func TestReadIgnoreFile_ReturnsMatchedName(t *testing.T) {
+	cases := []struct {
+		name     string
+		files    []string
+		expected string
+	}{
+		{"pdkignore wins over all", []string{".pdkignore", ".pmtignore", ".gitignore"}, ".pdkignore"},
+		{"pmtignore wins over gitignore", []string{".pmtignore", ".gitignore"}, ".pmtignore"},
+		{"gitignore alone", []string{".gitignore"}, ".gitignore"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range tc.files {
+				writeFile(t, dir, f, "# content of "+f)
+			}
+			data, name, err := readIgnoreFile(dir)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if name != tc.expected {
+				t.Errorf("expected matched name %q, got %q", tc.expected, name)
+			}
+			expectedContent := "# content of " + tc.expected
+			if string(data) != expectedContent {
+				t.Errorf("expected content %q, got %q, suggesting the wrong file was read", expectedContent, string(data))
+			}
+		})
+	}
+}
+
+func TestReadIgnoreFile_NoneExist(t *testing.T) {
+	dir := t.TempDir()
+	_, _, err := readIgnoreFile(dir)
+	if err == nil {
+		t.Fatal("expected error when no ignore file exists, got nil")
 	}
 }

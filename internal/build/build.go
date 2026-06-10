@@ -32,14 +32,15 @@ func DoBuild(dir string) error {
 		}
 	}
 
-	// Read .pdkignore and parse patterns line by line
-	pdkIgnoreData, err := os.ReadFile(filepath.Join(dir, ".pdkignore"))
+	// Read the ignore file (.pdkignore, .pmtignore, or .gitignore, in that
+	// order) and parse patterns line by line
+	ignoreData, _, err := readIgnoreFile(dir)
 	if err != nil {
-		return fmt.Errorf("failed to read .pdkignore: %w", err)
+		return err
 	}
 
 	var patterns []gogitignore.Pattern
-	for _, line := range strings.Split(string(pdkIgnoreData), "\n") {
+	for _, line := range strings.Split(string(ignoreData), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
