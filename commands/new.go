@@ -34,7 +34,7 @@ func (a *App) newModuleCmd() *cobra.Command {
 	newModuleCmd := &cobra.Command{
 		Use:   "module <name>",
 		Short: "Create a new Puppet module",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			forgeUser, _ := cmd.Flags().GetString("forge-user")
 			license, _ := cmd.Flags().GetString("license")
