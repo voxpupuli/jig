@@ -65,6 +65,8 @@ func NewModule(opts Options) error {
 		{FileName: "module/hiera.yaml", Destination: filepath.Join(moduleDir, "hiera.yaml")},
 		{FileName: "module/devcontainer/devcontainer.json", Destination: filepath.Join(moduleDir, ".devcontainer", "devcontainer.json")},
 		{FileName: "module/spec/spec_helper.rb", Destination: filepath.Join(moduleDir, "spec", "spec_helper.rb")},
+		{FileName: "module/spec/spec_helper_acceptance.rb", Destination: filepath.Join(moduleDir, "spec", "spec_helper_acceptance.rb")},
+		{FileName: "module/spec/acceptance/init_spec.rb", Destination: filepath.Join(moduleDir, "spec", "acceptance", "init_spec.rb")},
 		{FileName: "module/spec/default_facts.yml", Destination: filepath.Join(moduleDir, "spec", "default_facts.yml")},
 		{FileName: "module/data/common.yaml", Destination: filepath.Join(moduleDir, "data", "common.yaml")},
 		{FileName: "common/gitkeep", Destination: filepath.Join(moduleDir, "data", ".gitkeep")},
