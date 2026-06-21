@@ -78,7 +78,7 @@ func TestRunBundle_SuccessReturnsNilAndDoesNotExit(t *testing.T) {
 		func(int) { exitCalled = true },
 	)
 
-	if err := RunBundle([]string{"exec", "rake", "spec"}); err != nil {
+	if err := RunBundle(Runner{}, []string{"exec", "rake", "spec"}); err != nil {
 		t.Fatalf("expected nil error on clean exit, got %v", err)
 	}
 	if exitCalled {
@@ -101,7 +101,7 @@ func TestRunBundle_PropagatesChildExitCode(t *testing.T) {
 
 			// RunBundle returns normally here only because our fake osExit
 			// doesn't terminate; in production os.Exit would not return.
-			_ = RunBundle([]string{"exec", "rake", "validate"})
+			_ = RunBundle(Runner{}, []string{"exec", "rake", "validate"})
 
 			if !gotCalled {
 				t.Fatalf("expected osExit to be called for exit code %d", code)
@@ -128,7 +128,7 @@ func TestRunBundle_StartFailureReturnsErrorNotExit(t *testing.T) {
 		func(int) { exitCalled = true },
 	)
 
-	err := RunBundle([]string{"exec", "msync", "update"})
+	err := RunBundle(Runner{}, []string{"exec", "msync", "update"})
 	if err == nil {
 		t.Fatal("expected an error when the command cannot start, got nil")
 	}
@@ -172,7 +172,7 @@ func TestRunBundle_PassesArgsVerbatim(t *testing.T) {
 				func(int) {},
 			)
 
-			_ = RunBundle(args)
+			_ = RunBundle(Runner{}, args)
 
 			gotParts := []string{}
 			if captured != "" {
@@ -204,8 +204,146 @@ func TestRunBundle_AlwaysInvokesBundle(t *testing.T) {
 		func(int) {},
 	)
 
-	_ = RunBundle([]string{"exec", "rake", "spec"})
+	_ = RunBundle(Runner{}, []string{"exec", "rake", "spec"})
 	if gotName != "bundle" {
 		t.Fatalf("expected command name %q, got %q", "bundle", gotName)
 	}
+}
+
+// --- Runner resolution -----------------------------------------------------
+
+// withGetwd swaps the osGetwd seam so the container runner sees a deterministic
+// module root, restoring it afterward.
+func withGetwd(t *testing.T, fn func() (string, error)) {
+	t.Helper()
+	orig := osGetwd
+	osGetwd = fn
+	t.Cleanup(func() { osGetwd = orig })
+}
+
+// The local runner (zero value and explicit "local") must invoke the host's
+// bundle directly. Rake tasks become `bundle exec rake <tasks>`; raw bundle
+// args pass through untouched. Neither path consults osGetwd.
+func TestRunner_LocalResolves(t *testing.T) {
+	for _, typ := range []string{"", "local"} {
+		t.Run("type="+typ, func(t *testing.T) {
+			withGetwd(t, func() (string, error) {
+				t.Fatal("local runner must not consult the working directory")
+				return "", nil
+			})
+
+			name, args, err := Runner{Type: typ}.resolveRake([]string{"spec"})
+			if err != nil {
+				t.Fatalf("resolveRake: unexpected error: %v", err)
+			}
+			if name != "bundle" {
+				t.Fatalf("resolveRake command: got %q, want %q", name, "bundle")
+			}
+			if want := []string{"exec", "rake", "spec"}; !equal(args, want) {
+				t.Fatalf("resolveRake args mismatch:\n got  %#v\n want %#v", args, want)
+			}
+
+			name, args, err = Runner{Type: typ}.resolveBundle([]string{"exec", "msync", "update"})
+			if err != nil {
+				t.Fatalf("resolveBundle: unexpected error: %v", err)
+			}
+			if name != "bundle" {
+				t.Fatalf("resolveBundle command: got %q, want %q", name, "bundle")
+			}
+			if want := []string{"exec", "msync", "update"}; !equal(args, want) {
+				t.Fatalf("resolveBundle args mismatch:\n got  %#v\n want %#v", args, want)
+			}
+		})
+	}
+}
+
+// A voxbox rake task relies on the image's rake entrypoint, so the task names
+// are passed as the bare container command (no `bundle exec rake` prefix, no
+// --entrypoint override). The module is mounted at /repo.
+func TestRunner_VoxboxRakeInvocation(t *testing.T) {
+	withGetwd(t, func() (string, error) { return "/home/user/mymodule", nil })
+
+	name, args, err := Runner{Type: "voxbox"}.resolveRake([]string{"validate", "lint"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != defaultEngine {
+		t.Fatalf("expected engine %q, got %q", defaultEngine, name)
+	}
+	want := []string{
+		"run", "--rm", "-i",
+		"-v", "/home/user/mymodule:/repo:Z",
+		"-w", "/repo",
+		defaultImage,
+		"validate", "lint",
+	}
+	if !equal(args, want) {
+		t.Fatalf("container argv mismatch:\n got  %#v\n want %#v", args, want)
+	}
+}
+
+// A voxbox raw bundle command must override the image's rake entrypoint back to
+// `bundle` (e.g. for msync, which is not a rake task). Custom engine and image
+// must be honoured verbatim; "container" is an alias for "voxbox".
+func TestRunner_VoxboxBundleInvocation(t *testing.T) {
+	withGetwd(t, func() (string, error) { return "/repo/path", nil })
+
+	name, args, err := Runner{
+		Type:   "container",
+		Engine: "podman",
+		Image:  "localhost/voxbox:dev",
+	}.resolveBundle([]string{"exec", "msync", "update"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name != "podman" {
+		t.Fatalf("expected engine %q, got %q", "podman", name)
+	}
+	want := []string{
+		"run", "--rm", "-i",
+		"-v", "/repo/path:/repo:Z",
+		"-w", "/repo",
+		"--entrypoint", "bundle",
+		"localhost/voxbox:dev",
+		"exec", "msync", "update",
+	}
+	if !equal(args, want) {
+		t.Fatalf("container argv mismatch:\n got  %#v\n want %#v", args, want)
+	}
+}
+
+// An unrecognised runner type must be a hard error on both paths, not a silent
+// fallback to the local bundle (which would defeat opting into a container).
+func TestRunner_UnknownTypeErrors(t *testing.T) {
+	if _, _, err := (Runner{Type: "nope"}).resolveRake([]string{"spec"}); err == nil {
+		t.Fatal("resolveRake: expected an error for an unknown runner type, got nil")
+	}
+	if _, _, err := (Runner{Type: "nope"}).resolveBundle([]string{"exec", "msync", "update"}); err == nil {
+		t.Fatal("resolveBundle: expected an error for an unknown runner type, got nil")
+	}
+}
+
+// If the working directory can't be determined, the container runner must
+// surface that as an error rather than mounting a bogus path.
+func TestRunner_VoxboxGetwdFailureErrors(t *testing.T) {
+	withGetwd(t, func() (string, error) { return "", fmt.Errorf("boom") })
+
+	if _, _, err := (Runner{Type: "voxbox"}).resolveRake([]string{"spec"}); err == nil {
+		t.Fatal("resolveRake: expected an error when the working directory is unavailable, got nil")
+	}
+	if _, _, err := (Runner{Type: "voxbox"}).resolveBundle([]string{"exec", "msync", "update"}); err == nil {
+		t.Fatal("resolveBundle: expected an error when the working directory is unavailable, got nil")
+	}
+}
+
+func equal(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

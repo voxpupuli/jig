@@ -2,7 +2,6 @@
 package commands
 
 import (
-	"github.com/avitacco/jig/internal/bundle"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +21,7 @@ func (a *App) testUnitCmd() *cobra.Command {
 		Short:              "Run unit tests via rake spec through bundle",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return bundle.RunBundle(append([]string{"exec", "rake", "spec"}, args...))
+			return a.runRake(append([]string{"spec"}, args...))
 		},
 	}
 }
