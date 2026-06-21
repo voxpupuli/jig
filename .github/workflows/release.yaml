@@ -101,7 +101,10 @@ jobs:
             jig_${VERSION}_windows_amd64.zip \
             > sha256sums.txt
 
-      - name: Create release
+      # Immutable releases seal a release at publish time, so all assets must
+      # be uploaded while it is still a draft. Create the draft and upload the
+      # artifacts here, then publish it in the next step.
+      - name: Create draft release with artifacts
         uses: softprops/action-gh-release@v2
         with:
           draft: true
@@ -112,3 +115,10 @@ jobs:
             jig_${{ env.VERSION }}_darwin_arm64.tar.gz
             jig_${{ env.VERSION }}_windows_amd64.zip
             sha256sums.txt
+
+      # Publishing the draft seals it (immutable releases) with the assets
+      # already attached.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --repo "${GITHUB_REPOSITORY}"
