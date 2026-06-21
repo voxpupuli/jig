@@ -287,7 +287,8 @@ already exist under `pkg/`. An error is returned if it is not found.
 
 Runs validation and linting against the current module. This is a passthrough
 command that shells out to `bundle exec rake validate lint`, so it requires
-a Ruby toolchain and the module's bundled gems to be installed.
+a Ruby toolchain and the module's bundled gems to be installed — or a container
+runner (see [Running through voxbox](#running-through-voxbox)).
 ```
 jig validate [args...]
 ```
@@ -299,7 +300,8 @@ invocation.
 
 Runs the module's unit tests. This is a passthrough command that shells out to
 `bundle exec rake spec`, so it requires a Ruby toolchain and the module's
-bundled gems to be installed.
+bundled gems to be installed — or a container runner (see
+[Running through voxbox](#running-through-voxbox)).
 ```
 jig test unit [args...]
 ```
@@ -311,13 +313,57 @@ invocation.
 
 Synchronises the module's managed files from the module's templates. This is a
 passthrough command that shells out to `bundle exec msync update`, so it
-requires a Ruby toolchain and the module's bundled gems to be installed.
+requires a Ruby toolchain and the module's bundled gems to be installed — or a
+container runner (see [Running through voxbox](#running-through-voxbox)).
 ```
 jig update [args...]
 ```
 
 Any additional arguments are passed through verbatim to the underlying msync
 invocation.
+
+## Running through voxbox
+
+The `validate`, `test unit`, and `update` commands run a Ruby toolchain under
+the hood. By default that is the host's `bundle`, which needs a working
+Ruby/bundler install. Instead, jig can run them inside the
+[voxbox](https://github.com/voxpupuli/voxbox) container, so the only host
+dependency is a container engine. This is especially handy on Windows, where a
+system-wide bundler install is awkward.
+
+Enable it via the `[runner]` section of your config file:
+```toml
+[runner]
+type   = "voxbox"                        # "local" (default) or "voxbox"
+engine = "docker"                        # container engine: "docker" (default) or "podman"
+image  = "ghcr.io/voxpupuli/voxbox:latest"  # container image to run
+```
+
+With `type = "voxbox"`, your module root (the current directory) is mounted at
+`/repo` inside the container and used as the working directory, so the toolchain
+and gems come from the image rather than the host.
+
+The voxbox image's entrypoint is already `bundle exec rake`, so the rake-based
+commands pass their tasks straight through. `jig test unit` runs roughly:
+```bash
+docker run --rm -i -v "$PWD:/repo:Z" -w /repo \
+  ghcr.io/voxpupuli/voxbox:latest spec
+```
+
+`jig update` uses `msync`, which is not a rake task, so it overrides the
+entrypoint to run bundle directly:
+```bash
+docker run --rm -i -v "$PWD:/repo:Z" -w /repo --entrypoint bundle \
+  ghcr.io/voxpupuli/voxbox:latest exec msync update
+```
+
+Each setting can also be supplied through the environment, which overrides the
+config file:
+```bash
+export JIG_RUNNER_TYPE=voxbox
+export JIG_RUNNER_ENGINE=podman
+export JIG_RUNNER_IMAGE=ghcr.io/voxpupuli/voxbox:latest
+```
 
 ## Template Overrides
 
@@ -414,10 +460,19 @@ author         = "John Doe"
 license        = "Apache-2.0"
 forge_token    = "your-forge-token"
 template_dir   = "/path/to/templates"
+
+# Optionally run bundle-backed commands through a container instead of the
+# host's bundler. See "Running through voxbox" above.
+[runner]
+type   = "local"                            # "local" (default) or "voxbox"
+engine = "docker"                           # "docker" (default) or "podman"
+image  = "ghcr.io/voxpupuli/voxbox:latest"
 ```
 
 The config path can be overridden with the `--config` flag or the
-`JIG_CONFIG` environment variable.
+`JIG_CONFIG` environment variable. Individual fields can also be set through
+`JIG_`-prefixed environment variables (e.g. `JIG_FORGE_USERNAME`,
+`JIG_RUNNER_TYPE`), which take precedence over the config file.
 
 ## Contributing
 
