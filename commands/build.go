@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/avitacco/jig/internal/build"
 	"github.com/spf13/cobra"
+	"github.com/voxpupuli/jig/internal/build"
 )
 
 func (a *App) buildCmd() *cobra.Command {

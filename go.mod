@@ -1,4 +1,4 @@
-module github.com/avitacco/jig
+module github.com/voxpupuli/jig
 
 go 1.25.5
 

@@ -50,7 +50,7 @@ func TestLoad_RunnerDefaults(t *testing.T) {
 // Values in the config file must populate the nested runner struct.
 func TestLoad_RunnerFromFile(t *testing.T) {
 	path := writeConfig(t, `
-forge_username = "avitacco"
+forge_username = "jdoe"
 
 [runner]
 type   = "voxbox"
@@ -62,8 +62,8 @@ image  = "localhost/voxbox:dev"
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.ForgeUsername != "avitacco" {
-		t.Errorf("forge_username: got %q, want %q", cfg.ForgeUsername, "avitacco")
+	if cfg.ForgeUsername != "jdoe" {
+		t.Errorf("forge_username: got %q, want %q", cfg.ForgeUsername, "jdoe")
 	}
 	if cfg.Runner.Type != "voxbox" {
 		t.Errorf("runner type: got %q, want %q", cfg.Runner.Type, "voxbox")

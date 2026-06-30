@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/avitacco/jig/internal/module"
-	"github.com/avitacco/jig/internal/scaffold"
 	gogitignore "github.com/go-git/go-git/v5/plumbing/format/gitignore"
+	"github.com/voxpupuli/jig/internal/module"
+	"github.com/voxpupuli/jig/internal/scaffold"
 )
 
 func DoBuild(dir string) error {

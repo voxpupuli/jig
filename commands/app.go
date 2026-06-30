@@ -2,9 +2,9 @@
 package commands
 
 import (
-	"github.com/avitacco/jig/internal/bundle"
-	"github.com/avitacco/jig/internal/config"
 	"github.com/sirupsen/logrus"
+	"github.com/voxpupuli/jig/internal/bundle"
+	"github.com/voxpupuli/jig/internal/config"
 )
 
 type App struct {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/avitacco/jig/internal/forge"
-	"github.com/avitacco/jig/internal/release"
 	"github.com/spf13/cobra"
+	"github.com/voxpupuli/jig/internal/forge"
+	"github.com/voxpupuli/jig/internal/release"
 )
 
 func (a *App) releaseCmd() *cobra.Command {

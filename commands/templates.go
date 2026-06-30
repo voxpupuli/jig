@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/avitacco/jig/internal/scaffold"
-	"github.com/avitacco/jig/internal/template"
 	"github.com/spf13/cobra"
+	"github.com/voxpupuli/jig/internal/scaffold"
+	"github.com/voxpupuli/jig/internal/template"
 )
 
 func (a *App) templatesCmd() *cobra.Command {
