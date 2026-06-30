@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/avitacco/jig/internal/module"
-	"github.com/avitacco/jig/internal/template"
+	"github.com/voxpupuli/jig/internal/module"
+	"github.com/voxpupuli/jig/internal/template"
 )
 
 // Renderer is the interface satisfied by *template.Renderer. Declared here

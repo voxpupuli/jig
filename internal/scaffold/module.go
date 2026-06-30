@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/avitacco/jig/internal/module"
+	"github.com/voxpupuli/jig/internal/module"
 )
 
 func NewModule(opts Options) error {

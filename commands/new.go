@@ -8,8 +8,8 @@ import (
 	"os/user"
 	"strings"
 
-	"github.com/avitacco/jig/internal/scaffold"
 	"github.com/spf13/cobra"
+	"github.com/voxpupuli/jig/internal/scaffold"
 )
 
 func (a *App) newCmd() *cobra.Command {

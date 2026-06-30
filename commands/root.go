@@ -4,9 +4,9 @@ package commands
 import (
 	"os"
 
-	"github.com/avitacco/jig/internal/config"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/voxpupuli/jig/internal/config"
 )
 
 func Execute() error {

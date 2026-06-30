@@ -46,7 +46,7 @@ planned functionality.
 
 Requires Go 1.21 or later.
 ```bash
-git clone https://github.com/avitacco/jig.git
+git clone https://github.com/voxpupuli/jig.git
 cd jig
 go build -o jig .
 ```
@@ -455,7 +455,7 @@ template_dir = "/path/to/templates"
 jig looks for a config file at `~/.config/jig/config.toml`. All fields are
 optional. If the file does not exist, jig falls back to sensible defaults.
 ```toml
-forge_username = "avitacco"
+forge_username = "jdoe"
 author         = "John Doe"
 license        = "Apache-2.0"
 forge_token    = "your-forge-token"
