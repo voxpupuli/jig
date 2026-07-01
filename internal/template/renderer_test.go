@@ -76,6 +76,23 @@ func TestRender_EmbeddedTemplate(t *testing.T) {
 			t.Error("expected error for missing embedded template, got nil")
 		}
 	})
+
+	// Regression: on Windows, filepath.Clean rewrites "/" to "\", producing a
+	// backslash-separated name that embed.FS (which always uses "/") cannot
+	// find -- e.g. "templates/module\manifests\init.pp". Feeding a
+	// backslash-separated name here reproduces that state on any OS and must
+	// still resolve. See https://github.com/voxpupuli/jig -- Windows path bug.
+	t.Run("backslash-separated name resolves embedded template", func(t *testing.T) {
+		r := NewRenderer()
+		data := struct{ ModuleName string }{ModuleName: "mymodule"}
+		out, err := r.Render(`module\manifests\init.pp`, data)
+		if err != nil {
+			t.Fatalf("unexpected error for backslash-separated name: %v", err)
+		}
+		if !strings.Contains(out, "mymodule") {
+			t.Errorf("expected output to contain %q, got %q", "mymodule", out)
+		}
+	})
 }
 
 // --- Render with external dir ---
