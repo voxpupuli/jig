@@ -42,6 +42,12 @@ func (r Renderer) Render(templateName string, data any) (string, error) {
 		return "", fmt.Errorf("invalid template name %q: must be a relative path within the template directory", templateName)
 	}
 
+	// embed.FS always uses forward slashes on every OS. Template names are
+	// logical slash-paths, but on Windows filepath.Clean rewrites them with
+	// backslashes (and a Windows caller may pass backslashes directly), so
+	// convert any backslashes before building the embedded lookup path.
+	embeddedPath := "templates/" + strings.ReplaceAll(cleaned, `\`, "/")
+
 	var content []byte
 	var err error
 
@@ -58,13 +64,13 @@ func (r Renderer) Render(templateName string, data any) (string, error) {
 				return "", fmt.Errorf("failed to read external template %s: %w", templateName, err)
 			}
 			// file not found in external dir, fall through to embedded templates
-			content, err = embeddedTemplates.ReadFile("templates/" + cleaned)
+			content, err = embeddedTemplates.ReadFile(embeddedPath)
 			if err != nil {
 				return "", fmt.Errorf("failed to read embedded template %s: %w", templateName, err)
 			}
 		}
 	} else {
-		content, err = embeddedTemplates.ReadFile("templates/" + cleaned)
+		content, err = embeddedTemplates.ReadFile(embeddedPath)
 		if err != nil {
 			return "", fmt.Errorf("failed to read embedded template %s: %w", templateName, err)
 		}
