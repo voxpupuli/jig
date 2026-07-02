@@ -327,7 +327,7 @@ invocation.
 The `validate`, `test unit`, and `update` commands run a Ruby toolchain under
 the hood. By default that is the host's `bundle`, which needs a working
 Ruby/bundler install. Instead, jig can run them inside the
-[voxbox](https://github.com/voxpupuli/voxbox) container, so the only host
+[voxbox](https://github.com/voxpupuli/container-voxbox) container, so the only host
 dependency is a container engine. This is especially handy on Windows, where a
 system-wide bundler install is awkward.
 
