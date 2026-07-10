@@ -28,6 +28,12 @@ type Options struct {
 	Force       bool
 	TargetDir   string
 	TemplateDir string
+	// TemplateURL, TemplateRef, and TemplateCommit describe the remote
+	// template repository TemplateDir was fetched from, if any. They are
+	// recorded in the generated metadata.json.
+	TemplateURL    string
+	TemplateRef    string
+	TemplateCommit string
 }
 
 type ComponentOptions struct {

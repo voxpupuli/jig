@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -238,5 +239,52 @@ func TestNewMetadata_EmptyFields(t *testing.T) {
 				t.Errorf("expected Validate to warn about malformed name %q", m.Name)
 			}
 		})
+	}
+}
+
+// The template provenance fields must survive a write/read round trip, and
+// must be omitted from the JSON entirely when unset so modules that never
+// used a remote template keep a clean metadata.json.
+func TestTemplateFieldsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metadata.json")
+
+	m := NewMetadata("mymodule", "myuser", "My Name")
+	m.TemplateURL = "ssh://git@git.example.com/templates.git"
+	m.TemplateRef = "main"
+	m.TemplateCommit = "0123456789abcdef0123456789abcdef01234567"
+
+	if err := m.Write(path); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	got, err := ReadMetadata(path)
+	if err != nil {
+		t.Fatalf("ReadMetadata: %v", err)
+	}
+	if got.TemplateURL != m.TemplateURL {
+		t.Errorf("TemplateURL: got %q, want %q", got.TemplateURL, m.TemplateURL)
+	}
+	if got.TemplateRef != m.TemplateRef {
+		t.Errorf("TemplateRef: got %q, want %q", got.TemplateRef, m.TemplateRef)
+	}
+	if got.TemplateCommit != m.TemplateCommit {
+		t.Errorf("TemplateCommit: got %q, want %q", got.TemplateCommit, m.TemplateCommit)
+	}
+}
+
+func TestTemplateFieldsOmittedWhenUnset(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metadata.json")
+
+	m := NewMetadata("mymodule", "myuser", "My Name")
+	if err := m.Write(path); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read metadata.json: %v", err)
+	}
+	for _, key := range []string{"template-url", "template-ref", "template-commit"} {
+		if strings.Contains(string(content), key) {
+			t.Errorf("unset %s should be omitted from metadata.json", key)
+		}
 	}
 }
