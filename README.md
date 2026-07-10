@@ -285,15 +285,28 @@ already exist under `pkg/`. An error is returned if it is not found.
 
 ### `jig validate`
 
-Runs validation and linting against the current module. This is a passthrough
-command that shells out to `bundle exec rake validate lint`, so it requires
-a Ruby toolchain and the module's bundled gems to be installed — or a container
-runner (see [Running through voxbox](#running-through-voxbox)).
+Runs validation checks against the current module. By default this mirrors
+`pdk validate`: syntax (`rake validate`), puppet-lint (`rake lint`) and
+rubocop (`rake rubocop`) all run, each as its own rake invocation. It shells
+out to `bundle exec rake <task>` per check, so it requires a Ruby toolchain
+and the module's bundled gems to be installed — or a container runner (see
+[Running through voxbox](#running-through-voxbox)).
 ```
-jig validate [args...]
+jig validate [flags] [-- args...]
 ```
 
-Any additional arguments are passed through verbatim to the underlying rake
+| Flag | Description |
+| ---- | ----------- |
+| `-s`, `--syntax` | Run syntax checks (`rake validate`) |
+| `-l`, `--lint` | Run puppet-lint checks (`rake lint`) |
+| `-r`, `--rubocop` | Run rubocop checks (`rake rubocop`) |
+
+With no flags all three checks run. Passing one or more flags runs only the
+selected checks, e.g. `jig validate -s` for syntax only or `jig validate -sl`
+to skip rubocop. Checks run in order and stop at the first failure,
+propagating its exit code.
+
+Any arguments after `--` are passed through verbatim to each underlying rake
 invocation.
 
 ### `jig test unit`
