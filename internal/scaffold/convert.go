@@ -10,7 +10,7 @@ import (
 
 func ConvertModule(targetDir string) error {
 	if _, err := os.Stat(filepath.Join(targetDir, "metadata.json")); os.IsNotExist(err) {
-		return fmt.Errorf("no metadata.json found. the jig convert commnd must be executed from the module base.")
+		return fmt.Errorf("metadata.json not found; the convert command must be executed from the module base directory.")
 	}
 
 	filesToUpdate := []struct {

@@ -12,7 +12,7 @@ func (a *App) convertCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "convert",
 		Short: "Update Gemfile, Rakefile and spec_helper.rb in an existing module to be usable with voxbox and Vox Pupuli tooling",
-		Long:  `Reads the templates and overwrites Gemfile, Rakefile uand spec/spec_helper.rb in the actual Puppet module.`,
+		Long:  `Reads the templates and overwrites Gemfile, Rakefile and spec/spec_helper.rb in the actual Puppet module.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cwd, err := os.Getwd()
 			if err != nil {
