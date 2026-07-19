@@ -29,4 +29,3 @@ func (a *App) convertCmd() *cobra.Command {
 		},
 	}
 }
-

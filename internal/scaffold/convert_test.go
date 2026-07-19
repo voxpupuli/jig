@@ -28,7 +28,7 @@ func TestConvertModule(t *testing.T) {
 
 	for _, file := range expectedFiles {
 		fullPath := filepath.Join(tmpDir, file)
-		
+
 		info, err := os.Stat(fullPath)
 		if os.IsNotExist(err) {
 			t.Errorf("Expected file was not created: %s", file)

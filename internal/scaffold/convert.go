@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	
-	"github.com/voxpupuli/jig/internal/template" 
+
+	"github.com/voxpupuli/jig/internal/template"
 )
 
 func ConvertModule(targetDir string) error {
@@ -27,7 +27,7 @@ func ConvertModule(targetDir string) error {
 		return fmt.Errorf("Error creating spec directory: %w", err)
 	}
 
-	renderer := template.NewRenderer() 
+	renderer := template.NewRenderer()
 
 	for _, f := range filesToUpdate {
 		fullDestPath := filepath.Join(targetDir, f.DestPath)
