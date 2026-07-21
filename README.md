@@ -599,6 +599,14 @@ A few patterns used throughout the test suite that contributors should follow:
   (checking rejection of invalid or malicious input) are expected. When adding
   a new feature, include both.
 
+### Git hooks
+
+A pre-commit hook is provided in `githooks/` that runs `gofmt`, `go vet`,
+`go test ./...`, and `govulncheck ./...` before each commit. Enable it with:
+```bash
+git config core.hooksPath githooks
+```
+
 ### Design notes for contributors
 
 - Templates are embedded via `go:embed`. External templates take precedence
