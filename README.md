@@ -14,34 +14,21 @@ jig aims to replace the parts of PDK that matter most: scaffolding new modules,
 building module packages, and cutting releases. It ships as a single static
 binary with no external runtime required.
 
-## Status
+## Features
 
-jig is under active development. The table below reflects the current state of
-planned functionality.
-
-| Command            | Subcommand     | Status     |
-|--------------------|----------------|------------|
-| `new`              | `module`       | ✅ Working  |
-| `new`              | `class`        | ✅ Working  |
-| `new`              | `defined_type` | ✅ Working  |
-| `new`              | `fact`         | ✅ Working  |
-| `new`              | `function`     | ✅ Working  |
-| `new`              | `provider`     | ✅ Working  |
-| `new`              | `task`         | ✅ Working  |
-| `new`              | `test`         | ✅ Working  |
-| `new`              | `transport`    | ✅ Working  |
-| `--skip-interview` |                | ✅ Working  |
-| Template override  |                | ✅ Working  |
-| Remote templates   |                | ✅ Working  |
-| `templates`        | `dump`         | ✅ Working  |
-| `templates`        | `resolve`      | ✅ Working  |
-| `renew`            |                | ✅ Working  |
-| `convert`          |                | ✅ Working  |
-| `build`            |                | ✅ Working  |
-| `release`          |                | ✅ Working  |
-| `validate`         |                | ✅ Working  |
-| `test`             | `unit`         | ✅ Working  |
-| `msync`            |                | ✅ Working  |
+- **Scaffolding:** `jig new` generates modules, classes, defined types, facts,
+  functions, providers, tasks, tests, and transports. Use `--skip-interview` to
+  scaffold non-interactively.
+- **Templates:** override the built-in templates locally, pull templates from
+  remote repositories, and inspect them with `jig templates dump` and
+  `jig templates resolve`.
+- **Module lifecycle:** `jig renew` refreshes a module against its templates,
+  and `jig convert` brings existing modules under jig management.
+- **Build & release:** `jig build` packages a module and `jig release`
+  publishes it to the Puppet Forge.
+- **Quality checks:** `jig validate` runs static checks and `jig test unit`
+  runs unit tests.
+- **Fleet management:** `jig msync` keeps many modules in sync.
 
 ## Installation
 
