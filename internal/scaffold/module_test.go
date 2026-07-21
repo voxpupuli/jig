@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/voxpupuli/jig/internal/config"
 )
 
 func TestNewModule(t *testing.T) {
@@ -27,13 +29,13 @@ func TestNewModule(t *testing.T) {
 		moduleDir := filepath.Join(dir, "mymodule")
 		expectedFiles := []string{
 			"metadata.json",
+			"jig.toml",
 			"manifests/init.pp",
 			"README.md",
 			"CHANGELOG.md",
 			"Gemfile",
 			"Rakefile",
 			".gitignore",
-			".pdkignore",
 			"hiera.yaml",
 			"spec/classes/init_spec.rb",
 			"spec/spec_helper.rb",
@@ -137,6 +139,44 @@ func TestNewModule(t *testing.T) {
 		}
 		if m.Name != "myuser-mymodule" {
 			t.Errorf("Name: got %q, want %q", m.Name, "myuser-mymodule")
+		}
+	})
+
+	t.Run("template provenance is recorded in jig.toml, not metadata.json", func(t *testing.T) {
+		dir := t.TempDir()
+		opts := Options{
+			ForgeUser:      "myuser",
+			Name:           "mymodule",
+			Author:         "My Name",
+			License:        "Apache-2.0",
+			Summary:        "A test module",
+			Source:         "https://example.com",
+			TargetDir:      dir,
+			TemplateURL:    "ssh://git@example.com/templates.git",
+			TemplateRef:    "main",
+			TemplateCommit: "abc123",
+		}
+
+		if err := NewModule(opts); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		moduleDir := filepath.Join(dir, "mymodule")
+		cfg, err := config.LoadModuleConfig(moduleDir)
+		if err != nil {
+			t.Fatalf("could not read generated jig.toml: %v", err)
+		}
+		if cfg.Template.URL != opts.TemplateURL || cfg.Template.Ref != opts.TemplateRef || cfg.Template.Commit != opts.TemplateCommit {
+			t.Errorf("jig.toml template section: got %+v", cfg.Template)
+		}
+
+		m, err := GetMetadata(moduleDir)
+		if err != nil {
+			t.Fatalf("could not read generated metadata: %v", err)
+		}
+		if m.TemplateURL != "" || m.TemplateRef != "" || m.TemplateCommit != "" {
+			t.Errorf("metadata.json must not record template provenance anymore, got url=%q ref=%q commit=%q",
+				m.TemplateURL, m.TemplateRef, m.TemplateCommit)
 		}
 	})
 }

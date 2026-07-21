@@ -255,6 +255,35 @@ jig build
 Metadata validation runs before the build. Errors abort the build; warnings
 are printed and execution continues.
 
+By default only files the
+[Puppet module specification](https://github.com/puppetlabs/puppet-specifications/pull/157)
+allows in a published module are packaged (the same allowlist
+[puppet-modulebuilder](https://github.com/puppetlabs/puppet-modulebuilder) uses)
+— `manifests/`, `lib/`, `data/`, `metadata.json`, and so on. Everything else,
+including development files like `Gemfile`, `spec/`, and dotfiles, stays out
+without any configuration. Ignore files (`.pdkignore`, `.pmtignore`,
+`.gitignore`) are **not** consulted; the build warns about any leftover
+`.pdkignore`-style file and suggests removing it (`.gitignore` is exempt —
+it belongs to git, not the build).
+
+The `[build]` section of the module's `jig.toml` adjusts this. `action` is the
+default treatment for every file and `exceptions` lists gitignore-style globs
+treated the opposite way:
+
+```toml
+[build]
+# "deny" (the default): package nothing except the spec allowlist plus the
+# exceptions. "allow": package everything except the exceptions.
+action     = "deny"
+exceptions = ["/mycustomfile.txt"]
+```
+
+With `action = "deny"` the exceptions extend the built-in spec allowlist —
+useful to ship a file the spec does not know about. With `action = "allow"`
+jig packages everything except the exceptions, which is the old
+`.pdkignore`-style denylist workflow relocated into `jig.toml`. In both modes
+`pkg/`, `.git/`, `jig.toml` itself, and `.gitkeep` markers are never packaged.
+
 ### `jig release`
 
 Validates metadata, sets the version, builds the module package, and publishes
@@ -414,7 +443,6 @@ templates/
     README.md
     CHANGELOG.md
     gitignore
-    pdkignore
     rubocop.yml
     hiera.yaml
   class/
@@ -482,21 +510,23 @@ jig makes a shallow clone into a temporary directory, uses it exactly like a
 deletes the clone afterwards. The repository layout is the same as a template
 override directory.
 
-The module's `metadata.json` records where the templates came from:
+The module's `jig.toml` records where the templates came from:
 
-```json
-{
-  "template-url": "ssh://git@my.git.server/jig_templates.git",
-  "template-ref": "my_branch",
-  "template-commit": "<commit the templates were fetched at>"
-}
+```toml
+[template]
+url    = "ssh://git@my.git.server/jig_templates.git"
+ref    = "my_branch"
+commit = "<commit the templates were fetched at>"
 ```
 
 Later `jig new` invocations inside the module (for example `jig new class`)
-use the recorded `template-url` and `template-ref` automatically, so the whole
-team scaffolds from the same, current templates with no flags at all. An
-explicit `--template-dir` or `--template-url` flag overrides the recorded
-values.
+use the recorded url and ref automatically, so the whole team scaffolds from
+the same, current templates with no flags at all. An explicit
+`--template-dir` or `--template-url` flag overrides the recorded values.
+(Modules scaffolded by jig 1.x recorded these as `template-url` etc. in
+`metadata.json`. Those keys are not supported: jig ignores them and warns,
+with a suggestion to move them to the `[template]` section of `jig.toml` and
+remove them from `metadata.json`.)
 
 **Supported transports and authentication:**
 
@@ -515,7 +545,8 @@ fingerprint is still printed for the log. A host key that *differs* from the
 recorded one always fails, with no override; if a server legitimately rotated
 its key, remove the stale entry (`ssh-keygen -R <host>`) and connect again.
 Because it is a per-user trust decision, `ssh_accept_new` is read only from
-the config, environment, or flag — never from `metadata.json`.
+the config, environment, or flag — never from `jig.toml` or `metadata.json`,
+which are shared through the module repository.
 
 ## Configuration
 
@@ -544,6 +575,37 @@ The config path can be overridden with the `--config` flag or the
 `JIG_CONFIG` environment variable. Individual fields can also be set through
 `JIG_`-prefixed environment variables (e.g. `JIG_FORGE_USERNAME`,
 `JIG_RUNNER_TYPE`), which take precedence over the config file.
+
+### Per-module configuration (`jig.toml`)
+
+Settings that belong to a module rather than to a user live in a `jig.toml`
+in the module root, next to `metadata.json`. It is created by
+`jig new module` and committed to the module repository, so everyone working
+on the module shares it. All sections are optional; an absent section means
+jig's defaults.
+
+```toml
+# Template repository the module was scaffolded from; later jig commands in
+# this module default to it. See "Remote template repositories" above.
+[template]
+url    = "ssh://git@my.git.server/jig_templates.git"
+ref    = "main"
+commit = "<commit the templates were fetched at>"
+
+# Files the upcoming `jig renew` command may re-render and overwrite. Empty
+# by default so nothing is overwritten accidentally.
+[renew]
+paths = []
+
+# Which files go into the module package. See "jig build" above.
+[build]
+action     = "deny"
+exceptions = []
+```
+
+Trust decisions (like `ssh_accept_new`) are deliberately never read from
+`jig.toml`: a cloned repository must not be able to change security behavior
+for the people who clone it.
 
 ## Contributing
 

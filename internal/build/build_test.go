@@ -11,56 +11,28 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/voxpupuli/jig/internal/config"
 )
 
 // makeBuildDir creates a minimal but realistic module directory suitable for
-// DoBuild. It writes metadata.json, a .pdkignore, and a small set of files
-// that mirror what jig new module produces.
+// DoBuild. It writes metadata.json and a small set of files that mirror what
+// jig new module produces: some allowed by the spec allowlist, some not.
 func makeBuildDir(t *testing.T, forgeUser, moduleName string) string {
 	t.Helper()
 	dir := t.TempDir()
 
-	// Write metadata.json
-	meta := map[string]any{
-		"name":                    forgeUser + "-" + moduleName,
-		"version":                 "0.1.0",
-		"author":                  forgeUser,
-		"license":                 "Apache-2.0",
-		"summary":                 "A test module",
-		"source":                  "https://example.com",
-		"dependencies":            []any{},
-		"requirements":            []any{},
-		"operatingsystem_support": []any{},
-		"tags":                    []any{},
-		"pdk-version":             "3.4.0",
-	}
-	metaData, err := json.Marshal(meta)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, dir, "metadata.json", string(metaData))
+	writeTestMetadata(t, dir, forgeUser, moduleName, "0.1.0")
 
-	// Write a realistic .pdkignore
-	pdkIgnore := strings.Join([]string{
-		"/.git/",
-		"/pkg/",
-		"/spec/",
-		"/Gemfile",
-		"/Rakefile",
-		"/.gitignore",
-		"/.pdkignore",
-		"/.rubocop.yml",
-	}, "\n")
-	writeFile(t, dir, ".pdkignore", pdkIgnore)
-
-	// Files that should be included in the archive
+	// Files the spec allowlist permits
 	writeFile(t, dir, "manifests/init.pp", "class "+moduleName+" {}")
 	writeFile(t, dir, "README.md", "# "+moduleName)
 	writeFile(t, dir, "CHANGELOG.md", "## Release 0.1.0")
 	writeFile(t, dir, "hiera.yaml", "---\nversion: 5")
 	writeFile(t, dir, "data/common.yaml", "---")
+	writeFile(t, dir, "lib/facter/custom.rb", "# custom fact")
 
-	// Files that should be excluded
+	// Files it does not
 	writeFile(t, dir, "Gemfile", "source 'https://rubygems.org'")
 	writeFile(t, dir, "Rakefile", "require 'bundler'")
 	writeFile(t, dir, ".gitignore", "/pkg/")
@@ -183,7 +155,10 @@ func TestDoBuild_ArchivePrefix(t *testing.T) {
 	}
 }
 
-func TestDoBuild_IncludedFiles(t *testing.T) {
+// Without any jig.toml, the build must apply the spec allowlist: files the
+// specification permits go in, everything else stays out. No ignore file of
+// any kind is consulted.
+func TestDoBuild_DefaultSpecAllowlist(t *testing.T) {
 	dir := makeBuildDir(t, "myuser", "mymodule")
 
 	if err := DoBuild(dir); err != nil {
@@ -192,53 +167,112 @@ func TestDoBuild_IncludedFiles(t *testing.T) {
 
 	entries := archiveEntries(t, filepath.Join(dir, "pkg", "myuser-mymodule-0.1.0.tar.gz"))
 
-	expectedSuffixes := []string{
+	included := []string{
 		"metadata.json",
 		"manifests/init.pp",
 		"README.md",
 		"CHANGELOG.md",
 		"hiera.yaml",
 		"data/common.yaml",
+		"lib/facter/custom.rb",
 	}
-	for _, suffix := range expectedSuffixes {
+	for _, suffix := range included {
 		if !containsEntry(entries, suffix) {
 			t.Errorf("expected archive to contain %q, but it did not. entries: %v", suffix, entries)
 		}
 	}
+
+	excluded := []string{
+		"Gemfile",
+		"Rakefile",
+		".gitignore",
+		".rubocop.yml",
+		".gitkeep",
+		"spec/spec_helper.rb",
+	}
+	for _, suffix := range excluded {
+		if containsEntry(entries, suffix) {
+			t.Errorf("expected %q to be excluded by the spec allowlist, but it was in the archive", suffix)
+		}
+	}
 }
 
-func TestDoBuild_ExcludedFiles(t *testing.T) {
+// In deny mode (the default), configured exceptions extend the spec
+// allowlist rather than replacing it.
+func TestDoBuild_DenyExceptionsExtendSpec(t *testing.T) {
 	dir := makeBuildDir(t, "myuser", "mymodule")
+	writeFile(t, dir, "extra.txt", "shipped on purpose")
+	writeFile(t, dir, "jig.toml", "[build]\nexceptions = [\"/extra.txt\"]\n")
 
 	if err := DoBuild(dir); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	entries := archiveEntries(t, filepath.Join(dir, "pkg", "myuser-mymodule-0.1.0.tar.gz"))
+	if !containsEntry(entries, "extra.txt") {
+		t.Error("extra.txt should have been included by the configured exception")
+	}
+	if !containsEntry(entries, "manifests/init.pp") {
+		t.Error("manifests/init.pp should still be included: exceptions must extend the spec allowlist, not replace it")
+	}
+	if containsEntry(entries, "Gemfile") {
+		t.Error("Gemfile should still be excluded in deny mode")
+	}
+}
 
-	// Excluded by .pdkignore
-	pdkIgnoreExcluded := []string{
-		"Gemfile",
-		"Rakefile",
-		".gitignore",
-		".pdkignore",
-		"spec/spec_helper.rb",
-	}
-	for _, suffix := range pdkIgnoreExcluded {
-		if containsEntry(entries, suffix) {
-			t.Errorf("expected %q to be excluded by .pdkignore, but it was in the archive", suffix)
-		}
+// action = "allow" packages everything except the exceptions -- the old
+// denylist workflow, now driven from jig.toml.
+func TestDoBuild_AllowActionExcludesExceptions(t *testing.T) {
+	dir := makeBuildDir(t, "myuser", "mymodule")
+	writeFile(t, dir, "random.txt", "not in the spec allowlist")
+	writeFile(t, dir, "jig.toml", "[build]\naction = \"allow\"\nexceptions = [\"/Gemfile\", \"/spec/**\"]\n")
+
+	if err := DoBuild(dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Excluded by hardcoded patterns
-	hardcodedExcluded := []string{
-		".gitkeep",
-		".rubocop.yml",
+	entries := archiveEntries(t, filepath.Join(dir, "pkg", "myuser-mymodule-0.1.0.tar.gz"))
+	if !containsEntry(entries, "random.txt") {
+		t.Error("random.txt should have been included: allow mode packages everything not excepted")
 	}
-	for _, suffix := range hardcodedExcluded {
-		if containsEntry(entries, suffix) {
-			t.Errorf("expected %q to be excluded by hardcoded pattern, but it was in the archive", suffix)
-		}
+	if containsEntry(entries, "Gemfile") {
+		t.Error("Gemfile should have been excluded by the configured exception")
+	}
+	if containsEntry(entries, "spec/spec_helper.rb") {
+		t.Error("spec/spec_helper.rb should have been excluded by the configured exception")
+	}
+	if containsEntry(entries, ".gitkeep") {
+		t.Error(".gitkeep markers must be excluded in every mode")
+	}
+	if containsEntry(entries, "jig.toml") {
+		t.Error("jig.toml must never be packaged")
+	}
+}
+
+func TestDoBuild_JigTomlNeverInArchive(t *testing.T) {
+	dir := makeBuildDir(t, "myuser", "mymodule")
+	writeFile(t, dir, "jig.toml", "")
+
+	if err := DoBuild(dir); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	entries := archiveEntries(t, filepath.Join(dir, "pkg", "myuser-mymodule-0.1.0.tar.gz"))
+	if containsEntry(entries, "jig.toml") {
+		t.Error("jig.toml must never be packaged")
+	}
+}
+
+func TestDoBuild_InvalidBuildAction(t *testing.T) {
+	dir := makeBuildDir(t, "myuser", "mymodule")
+	writeFile(t, dir, "jig.toml", "[build]\naction = \"denylist\"\n")
+
+	err := DoBuild(dir)
+	if err == nil {
+		t.Fatal("expected error for invalid build action, got nil")
+	}
+	if !strings.Contains(err.Error(), "denylist") {
+		t.Errorf("error %q does not mention the invalid action", err.Error())
 	}
 }
 
@@ -297,34 +331,6 @@ func TestDoBuild_InvalidMetadata(t *testing.T) {
 	}
 }
 
-func TestDoBuild_EmptyPdkIgnore(t *testing.T) {
-	// An empty .pdkignore is valid -- no patterns means nothing is excluded
-	// (except the hardcoded ones). The build should succeed.
-	dir := t.TempDir()
-
-	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
-	writeFile(t, dir, ".pdkignore", "")
-	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
-
-	if err := DoBuild(dir); err != nil {
-		t.Fatalf("unexpected error for empty .pdkignore: %v", err)
-	}
-}
-
-func TestDoBuild_PdkIgnoreCommentsAndBlanks(t *testing.T) {
-	// A .pdkignore with only comments and blank lines should behave the
-	// same as an empty one.
-	dir := t.TempDir()
-
-	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
-	writeFile(t, dir, ".pdkignore", "# this is a comment\n\n# another comment\n")
-	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
-
-	if err := DoBuild(dir); err != nil {
-		t.Fatalf("unexpected error for comment-only .pdkignore: %v", err)
-	}
-}
-
 func TestDoBuild_ArchiveName(t *testing.T) {
 	// Verify the archive name format: forgeuser-modulename-version.tar.gz
 	cases := []struct {
@@ -340,26 +346,7 @@ func TestDoBuild_ArchiveName(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("%s-%s", tc.forgeUser, tc.moduleName), func(t *testing.T) {
 			dir := makeBuildDir(t, tc.forgeUser, tc.moduleName)
-
-			// Update version in metadata.json
-			meta := map[string]any{
-				"name":                    tc.forgeUser + "-" + tc.moduleName,
-				"version":                 tc.version,
-				"author":                  tc.forgeUser,
-				"license":                 "Apache-2.0",
-				"summary":                 "test",
-				"source":                  "https://example.com",
-				"dependencies":            []any{},
-				"requirements":            []any{},
-				"operatingsystem_support": []any{},
-				"tags":                    []any{},
-				"pdk-version":             "3.4.0",
-			}
-			metaData, err := json.Marshal(meta)
-			if err != nil {
-				t.Fatal(err)
-			}
-			writeFile(t, dir, "metadata.json", string(metaData))
+			writeTestMetadata(t, dir, tc.forgeUser, tc.moduleName, tc.version)
 
 			if err := DoBuild(dir); err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -373,149 +360,134 @@ func TestDoBuild_ArchiveName(t *testing.T) {
 	}
 }
 
-// --- ignore file fallback chain ---
+// A leftover ignore file must produce a warning naming it, since builds no
+// longer obey it. .gitignore belongs to git and must stay silent.
+func TestDoBuild_WarnsAboutIgnoreFiles(t *testing.T) {
+	dir := makeBuildDir(t, "myuser", "mymodule")
+	writeFile(t, dir, ".pdkignore", "/spec/\n")
+	writeFile(t, dir, ".pmtignore", "/spec/\n")
 
-func TestDoBuild_PdkIgnoreTakesPrecedence(t *testing.T) {
-	// When both .pdkignore and .pmtignore exist, only .pdkignore patterns
-	// apply. Each file ignores a different sentinel so misuse is visible
-	// in the archive contents.
-	dir := t.TempDir()
-	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
-	writeFile(t, dir, ".pdkignore", "/exclude-pdk.txt\n/.pmtignore\n/.pdkignore\n")
-	writeFile(t, dir, ".pmtignore", "/exclude-pmt.txt\n")
-	writeFile(t, dir, "exclude-pdk.txt", "ignored by pdkignore")
-	writeFile(t, dir, "exclude-pmt.txt", "ignored only by pmtignore")
-	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
+	out := captureStdout(t, func() {
+		if err := DoBuild(dir); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 
-	if err := DoBuild(dir); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	for _, name := range []string{".pdkignore", ".pmtignore"} {
+		if !strings.Contains(out, name) || !strings.Contains(out, "not obeyed") {
+			t.Errorf("expected a warning naming %s, got output: %q", name, out)
+		}
+	}
+	if strings.Contains(out, ".gitignore") {
+		t.Errorf(".gitignore must not be warned about, got output: %q", out)
 	}
 
+	// The ignore file must also not change what gets packaged.
 	entries := archiveEntries(t, filepath.Join(dir, "pkg", "myuser-mymodule-0.1.0.tar.gz"))
-	if containsEntry(entries, "exclude-pdk.txt") {
-		t.Error("exclude-pdk.txt should have been excluded by .pdkignore")
-	}
-	if !containsEntry(entries, "exclude-pmt.txt") {
-		t.Error("exclude-pmt.txt was excluded, meaning .pmtignore patterns were applied despite .pdkignore being present")
-	}
-}
-
-func TestDoBuild_PmtIgnoreFallback(t *testing.T) {
-	dir := t.TempDir()
-	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
-	writeFile(t, dir, ".pmtignore", "/exclude-pmt.txt\n/.pmtignore\n")
-	writeFile(t, dir, "exclude-pmt.txt", "ignored by pmtignore")
-	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
-
-	if err := DoBuild(dir); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	entries := archiveEntries(t, filepath.Join(dir, "pkg", "myuser-mymodule-0.1.0.tar.gz"))
-	if containsEntry(entries, "exclude-pmt.txt") {
-		t.Error("exclude-pmt.txt should have been excluded by .pmtignore fallback")
-	}
 	if !containsEntry(entries, "manifests/init.pp") {
-		t.Error("manifests/init.pp should have been included")
+		t.Error("manifests/init.pp should be included regardless of ignore files")
 	}
 }
 
-func TestDoBuild_GitIgnoreFallback(t *testing.T) {
+func TestFindIgnoreFiles(t *testing.T) {
 	dir := t.TempDir()
-	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
-	writeFile(t, dir, ".gitignore", "/exclude-git.txt\n/.gitignore\n")
-	writeFile(t, dir, "exclude-git.txt", "ignored by gitignore")
-	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
-
-	if err := DoBuild(dir); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	writeFile(t, dir, ".pdkignore", "")
+	writeFile(t, dir, ".pmtignore", "")
+	writeFile(t, dir, ".customignore", "")
+	writeFile(t, dir, ".gitignore", "")                                      // exempt: belongs to git
+	writeFile(t, dir, "notignore", "")                                       // no leading dot
+	writeFile(t, dir, ".ignorefile", "")                                     // wrong suffix
+	writeFile(t, dir, "sub/.pdkignore", "")                                  // not in the module root
+	if err := os.Mkdir(filepath.Join(dir, ".dirignore"), 0755); err != nil { // directories don't count
+		t.Fatal(err)
 	}
 
-	entries := archiveEntries(t, filepath.Join(dir, "pkg", "myuser-mymodule-0.1.0.tar.gz"))
-	if containsEntry(entries, "exclude-git.txt") {
-		t.Error("exclude-git.txt should have been excluded by .gitignore fallback")
+	found := findIgnoreFiles(dir)
+	var names []string
+	for _, f := range found {
+		names = append(names, filepath.Base(f))
 	}
-	if !containsEntry(entries, "manifests/init.pp") {
-		t.Error("manifests/init.pp should have been included")
-	}
-}
 
-func TestDoBuild_NoIgnoreFileErrorNamesAllCandidates(t *testing.T) {
-	dir := t.TempDir()
-	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
-	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
-
-	err := DoBuild(dir)
-	if err == nil {
-		t.Fatal("expected error when no ignore file exists, got nil")
+	want := []string{".customignore", ".pdkignore", ".pmtignore"}
+	if len(names) != len(want) {
+		t.Fatalf("found %v, want %v", names, want)
 	}
-	for _, name := range []string{".pdkignore", ".pmtignore", ".gitignore"} {
-		if !strings.Contains(err.Error(), name) {
-			t.Errorf("error %q does not mention %s", err.Error(), name)
+	for i, name := range want {
+		if names[i] != name {
+			t.Errorf("found %v, want %v", names, want)
+			break
 		}
 	}
 }
 
-func TestDoBuild_UnreadableIgnoreFileDoesNotFallThrough(t *testing.T) {
-	// A read failure on an earlier candidate must surface as an error, not
-	// silently fall through to a later candidate. A directory named
-	// .pdkignore triggers a non-ENOENT read error without needing chmod
-	// tricks, which fail when tests run as root (e.g. in containers).
-	dir := t.TempDir()
-	writeTestMetadata(t, dir, "myuser", "mymodule", "0.1.0")
-	if err := os.Mkdir(filepath.Join(dir, ".pdkignore"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, dir, ".gitignore", "/manifests/\n")
-	writeFile(t, dir, "manifests/init.pp", "class mymodule {}")
+// --- buildFilter ---
 
-	err := DoBuild(dir)
-	if err == nil {
-		t.Fatal("expected error for unreadable .pdkignore, but build succeeded, likely by falling through to .gitignore")
+func TestBuildFilter_DefaultDeny(t *testing.T) {
+	filter, err := newBuildFilter(config.BuildConfig{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(err.Error(), ".pdkignore") {
-		t.Errorf("error %q does not mention .pdkignore", err.Error())
-	}
-}
 
-// --- readIgnoreFile ---
-
-func TestReadIgnoreFile_ReturnsMatchedName(t *testing.T) {
 	cases := []struct {
-		name     string
-		files    []string
-		expected string
+		path     string
+		included bool
 	}{
-		{"pdkignore wins over all", []string{".pdkignore", ".pmtignore", ".gitignore"}, ".pdkignore"},
-		{"pmtignore wins over gitignore", []string{".pmtignore", ".gitignore"}, ".pmtignore"},
-		{"gitignore alone", []string{".gitignore"}, ".gitignore"},
+		{"metadata.json", true},
+		{"CHANGELOG.md", true},
+		{"README.md", true},
+		{"REFERENCE.md", true},
+		{"LICENSE", true},
+		{"hiera.yaml", true},
+		{"manifests/init.pp", true},
+		{"manifests/sub/deep.pp", true},
+		{"lib/facter/custom.rb", true},
+		{"data/common.yaml", true},
+		{"Gemfile", false},
+		{"Rakefile", false},
+		{".gitignore", false},
+		{".rubocop.yml", false},
+		{"spec/spec_helper.rb", false},
+		{"data/.gitkeep", false},
+		{"jig.toml", false},
+		{"pkg/myuser-mymodule-0.1.0.tar.gz", false},
 	}
-
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			for _, f := range tc.files {
-				writeFile(t, dir, f, "# content of "+f)
-			}
-			data, name, err := readIgnoreFile(dir)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if name != tc.expected {
-				t.Errorf("expected matched name %q, got %q", tc.expected, name)
-			}
-			expectedContent := "# content of " + tc.expected
-			if string(data) != expectedContent {
-				t.Errorf("expected content %q, got %q, suggesting the wrong file was read", expectedContent, string(data))
-			}
-		})
+		if got := filter.Include(tc.path); got != tc.included {
+			t.Errorf("Include(%q): got %v, want %v", tc.path, got, tc.included)
+		}
 	}
 }
 
-func TestReadIgnoreFile_NoneExist(t *testing.T) {
-	dir := t.TempDir()
-	_, _, err := readIgnoreFile(dir)
-	if err == nil {
-		t.Fatal("expected error when no ignore file exists, got nil")
+func TestBuildFilter_AllowMode(t *testing.T) {
+	filter, err := newBuildFilter(config.BuildConfig{
+		Action:     config.BuildActionAllow,
+		Exceptions: []string{"/Gemfile", "/spec/**"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cases := []struct {
+		path     string
+		included bool
+	}{
+		{"random.txt", true},
+		{".gitignore", true},
+		{"Gemfile", false},
+		{"spec/spec_helper.rb", false},
+		{"jig.toml", false},
+		{"data/.gitkeep", false},
+		{"pkg/archive.tar.gz", false},
+	}
+	for _, tc := range cases {
+		if got := filter.Include(tc.path); got != tc.included {
+			t.Errorf("Include(%q): got %v, want %v", tc.path, got, tc.included)
+		}
+	}
+}
+
+func TestBuildFilter_InvalidAction(t *testing.T) {
+	if _, err := newBuildFilter(config.BuildConfig{Action: "bogus"}); err == nil {
+		t.Fatal("expected error for invalid action, got nil")
 	}
 }

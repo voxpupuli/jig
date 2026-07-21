@@ -218,3 +218,33 @@ func TestValidate_URLFields(t *testing.T) {
 		})
 	}
 }
+
+// Template keys in metadata.json (written by jig 1.x) are not supported;
+// their presence must produce a warning pointing at jig.toml, and clean
+// metadata must not.
+func TestValidate_TemplateSettingsWarn(t *testing.T) {
+	cases := []struct {
+		name   string
+		modify func(*Metadata)
+		warns  bool
+	}{
+		{"no template keys", func(m *Metadata) {}, false},
+		{"template-url", func(m *Metadata) { m.TemplateURL = "ssh://git@example.com/t.git" }, true},
+		{"template-ref only", func(m *Metadata) { m.TemplateRef = "main" }, true},
+		{"template-commit only", func(m *Metadata) { m.TemplateCommit = "abc123" }, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := validMetadata()
+			tc.modify(&m)
+			warnings := findResults(m.Validate(), "template-url", Warning)
+			if tc.warns && len(warnings) == 0 {
+				t.Error("expected a warning about template settings in metadata.json")
+			}
+			if !tc.warns && len(warnings) != 0 {
+				t.Errorf("expected no template warning, got %v", warnings)
+			}
+		})
+	}
+}

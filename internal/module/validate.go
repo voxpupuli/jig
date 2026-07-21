@@ -129,6 +129,14 @@ func (m Metadata) Validate() []ValidationResult {
 		})
 	}
 
+	if m.HasTemplateSettings() {
+		results = append(results, ValidationResult{
+			Level:   Warning,
+			Field:   "template-url",
+			Message: "template settings in metadata.json are not supported; move template-url/template-ref/template-commit to the [template] section of jig.toml and remove them from metadata.json",
+		})
+	}
+
 	return results
 }
 

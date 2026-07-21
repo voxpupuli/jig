@@ -7,13 +7,14 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"github.com/voxpupuli/jig/internal/config"
 	"github.com/voxpupuli/jig/internal/module"
 	"github.com/voxpupuli/jig/internal/remote"
 )
 
 // templateSource is a resolved template location: a local directory (possibly
 // a temporary clone of a remote repository) plus, when remote, the provenance
-// to record in metadata.json.
+// to record in the module's jig.toml.
 type templateSource struct {
 	Dir     string
 	URL     string
@@ -32,11 +33,12 @@ func (s *templateSource) Cleanup() {
 
 // resolveTemplateSource decides where templates come from, in order of
 // precedence: the --template-url flag, the --template-dir flag, the
-// template-url recorded in metadataDir's metadata.json, template_dir from the
-// config, and finally the embedded templates (empty Dir). metadataDir == ""
-// skips the metadata lookup; `new module` uses that since no metadata exists
-// yet.
-func (a *App) resolveTemplateSource(cmd *cobra.Command, metadataDir string) (*templateSource, error) {
+// [template] section of moduleDir's jig.toml, template_dir from the config,
+// and finally the embedded templates (empty Dir). moduleDir == "" skips the
+// module lookup; `new module` uses that since no module exists yet.
+// Template keys in metadata.json (written by jig 1.x) are not supported and
+// only produce a warning.
+func (a *App) resolveTemplateSource(cmd *cobra.Command, moduleDir string) (*templateSource, error) {
 	flags := cmd.InheritedFlags()
 	url, _ := flags.GetString("template-url")
 	ref, _ := flags.GetString("template-ref")
@@ -46,12 +48,19 @@ func (a *App) resolveTemplateSource(cmd *cobra.Command, metadataDir string) (*te
 		return nil, fmt.Errorf("--template-url and --template-dir are mutually exclusive")
 	}
 
-	if url == "" && dir == "" && metadataDir != "" {
-		if meta, err := module.ReadMetadata(filepath.Join(metadataDir, "metadata.json")); err == nil {
-			url = meta.TemplateURL
+	if url == "" && dir == "" && moduleDir != "" {
+		moduleConfig, err := config.LoadModuleConfig(moduleDir)
+		if err != nil {
+			return nil, err
+		}
+		if moduleConfig.Template.URL != "" {
+			url = moduleConfig.Template.URL
 			if ref == "" {
-				ref = meta.TemplateRef
+				ref = moduleConfig.Template.Ref
 			}
+		}
+		if meta, err := module.ReadMetadata(filepath.Join(moduleDir, "metadata.json")); err == nil && meta.HasTemplateSettings() {
+			fmt.Println("warning: template settings in metadata.json are not supported; move template-url/template-ref/template-commit to the [template] section of jig.toml and remove them from metadata.json")
 		}
 	}
 

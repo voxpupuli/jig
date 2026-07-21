@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/voxpupuli/jig/internal/config"
 	"github.com/voxpupuli/jig/internal/module"
 )
 
@@ -43,12 +44,20 @@ func NewModule(opts Options) error {
 	meta.License = opts.License
 	meta.Summary = opts.Summary
 	meta.Source = opts.Source
-	meta.TemplateURL = opts.TemplateURL
-	meta.TemplateRef = opts.TemplateRef
-	meta.TemplateCommit = opts.TemplateCommit
 
 	if err := meta.Write(filepath.Join(moduleDir, "metadata.json")); err != nil {
 		return fmt.Errorf("failed to write metadata.json: %w", err)
+	}
+
+	moduleConfig := config.ModuleConfig{
+		Template: config.ModuleTemplate{
+			URL:    opts.TemplateURL,
+			Ref:    opts.TemplateRef,
+			Commit: opts.TemplateCommit,
+		},
+	}
+	if err := moduleConfig.Write(moduleDir); err != nil {
+		return err
 	}
 
 	renderer := newRenderer(opts.TemplateDir)
@@ -63,7 +72,6 @@ func NewModule(opts Options) error {
 		{FileName: "module/editorconfig", Destination: filepath.Join(moduleDir, ".editorconfig")},
 		{FileName: "module/gitignore", Destination: filepath.Join(moduleDir, ".gitignore")},
 		{FileName: "module/overcommit.yml", Destination: filepath.Join(moduleDir, ".overcommit.yml")},
-		{FileName: "module/pdkignore", Destination: filepath.Join(moduleDir, ".pdkignore")},
 		{FileName: "module/rubocop.yml", Destination: filepath.Join(moduleDir, ".rubocop.yml")},
 		{FileName: "module/hiera.yaml", Destination: filepath.Join(moduleDir, "hiera.yaml")},
 		{FileName: "module/devcontainer/devcontainer.json", Destination: filepath.Join(moduleDir, ".devcontainer", "devcontainer.json")},
