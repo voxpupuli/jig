@@ -45,6 +45,7 @@ func Execute() error {
 	rootCmd.AddCommand(app.updateCmd())
 	rootCmd.AddCommand(app.validateCmd())
 	rootCmd.AddCommand(app.testCmd())
+	rootCmd.AddCommand(app.convertCmd())
 
 	return rootCmd.Execute()
 }
