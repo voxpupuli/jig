@@ -1,0 +1,26 @@
+#!/bin/sh
+# Pre-commit checks: gofmt, go vet, go test, govulncheck.
+# Enable with: git config core.hooksPath githooks
+
+set -e
+
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+	echo "gofmt: the following files are not formatted:"
+	echo "$unformatted"
+	echo "Run: gofmt -w ."
+	exit 1
+fi
+
+echo "Running go vet..."
+go vet ./...
+
+echo "Running go test..."
+go test ./...
+
+if command -v govulncheck >/dev/null 2>&1; then
+	echo "Running govulncheck..."
+	govulncheck ./...
+else
+	echo "govulncheck not found, skipping (install: go install golang.org/x/vuln/cmd/govulncheck@latest)"
+fi
