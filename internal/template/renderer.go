@@ -57,45 +57,134 @@ func validateName(templateName string) (string, error) {
 	return strings.ReplaceAll(cleaned, `\`, "/"), nil
 }
 
+// Source names where a template candidate lives.
+const (
+	SourceExternal = "external"
+	SourceEmbedded = "embedded"
+)
+
+// candidate is one source a logical template name may resolve from: the
+// .tmpl and plain paths to try, and how to read them.
+type candidate struct {
+	tmplPath  string
+	plainPath string
+	read      func(string) ([]byte, error)
+	source    string
+}
+
+// candidates returns the sources to try for a logical name, in precedence
+// order: the external directory (when configured), then the embedded
+// templates.
+func (r Renderer) candidates(name string) ([]candidate, error) {
+	var cands []candidate
+	if r.externalDir != "" {
+		extBase := filepath.Clean(r.externalDir)
+		extPath := filepath.Join(extBase, filepath.FromSlash(name))
+		// Double-check the joined path stays within the external dir.
+		if !strings.HasPrefix(extPath, extBase+string(filepath.Separator)) {
+			return nil, fmt.Errorf("invalid template name %q: resolves outside template directory", name)
+		}
+		cands = append(cands, candidate{
+			tmplPath:  extPath + TmplSuffix,
+			plainPath: extPath,
+			read:      os.ReadFile,
+			source:    SourceExternal,
+		})
+	}
+
+	embPath := "templates/" + name
+	cands = append(cands, candidate{
+		tmplPath:  embPath + TmplSuffix,
+		plainPath: embPath,
+		read:      embeddedTemplates.ReadFile,
+		source:    SourceEmbedded,
+	})
+	return cands, nil
+}
+
 // resolve looks up a logical template name and returns its content and
 // whether it is a template (a .tmpl file, to be rendered) or a verbatim file
 // (to be copied as-is). The external directory takes precedence over the
 // embedded templates; within one source, having both "name" and "name.tmpl"
 // is an error because both would produce the same output file.
 func (r Renderer) resolve(name string) ([]byte, bool, error) {
-	if r.externalDir != "" {
-		extBase := filepath.Clean(r.externalDir)
-		extPath := filepath.Join(extBase, filepath.FromSlash(name))
-		// Double-check the joined path stays within the external dir.
-		if !strings.HasPrefix(extPath, extBase+string(filepath.Separator)) {
-			return nil, false, fmt.Errorf("invalid template name %q: resolves outside template directory", name)
-		}
-
-		content, isTemplate, found, err := readOne(
-			func(p string) ([]byte, error) { return os.ReadFile(p) },
-			extPath+TmplSuffix, extPath, name,
-		)
+	cands, err := r.candidates(name)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, c := range cands {
+		content, isTemplate, found, err := readOne(c.read, c.tmplPath, c.plainPath, name)
 		if err != nil {
 			return nil, false, err
 		}
 		if found {
 			return content, isTemplate, nil
 		}
-		// not found in external dir, fall through to embedded templates
+		// not found in this source, fall through to the next one
+	}
+	return nil, false, fmt.Errorf("template %s not found", name)
+}
+
+// Step is one path checked during resolution, in the order it was tried.
+type Step struct {
+	Path   string // file path (external) or embed.FS path (embedded)
+	Source string // SourceExternal or SourceEmbedded
+	Found  bool
+}
+
+// Resolution reports how a logical template name resolves, for debugging.
+type Resolution struct {
+	Name        string // cleaned logical name
+	ExternalDir string // external directory consulted, "" if none
+	Steps       []Step // every path checked, in order
+	Found       bool
+	Path        string // winning path, "" when not found
+	Source      string // SourceExternal or SourceEmbedded, "" when not found
+	IsTemplate  bool   // true: rendered through text/template; false: copied verbatim
+}
+
+// Explain traces the same lookup Render performs and reports every path
+// checked and the winner, without rendering anything. Error cases (name
+// escaping the template directory, a file/.tmpl collision, unreadable files)
+// fail exactly as Render would.
+func (r Renderer) Explain(templateName string) (*Resolution, error) {
+	name, err := validateName(templateName)
+	if err != nil {
+		return nil, err
 	}
 
-	embPath := "templates/" + name
-	content, isTemplate, found, err := readOne(
-		func(p string) ([]byte, error) { return embeddedTemplates.ReadFile(p) },
-		embPath+TmplSuffix, embPath, name,
-	)
+	res := &Resolution{Name: name, ExternalDir: r.externalDir}
+	cands, err := r.candidates(name)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	if !found {
-		return nil, false, fmt.Errorf("template %s not found", name)
+	for _, c := range cands {
+		_, isTemplate, found, err := readOne(c.read, c.tmplPath, c.plainPath, name)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			res.Steps = append(res.Steps,
+				Step{Path: c.tmplPath, Source: c.source, Found: false},
+				Step{Path: c.plainPath, Source: c.source, Found: false})
+			continue
+		}
+		// readOne errors when both variants exist, so exactly one was found.
+		if isTemplate {
+			res.Steps = append(res.Steps, Step{Path: c.tmplPath, Source: c.source, Found: true})
+			res.Path = c.tmplPath
+		} else {
+			res.Steps = append(res.Steps,
+				Step{Path: c.tmplPath, Source: c.source, Found: false},
+				Step{Path: c.plainPath, Source: c.source, Found: true})
+			res.Path = c.plainPath
+		}
+		res.Found = true
+		res.Source = c.source
+		res.IsTemplate = isTemplate
+		return res, nil
 	}
-	return content, isTemplate, nil
+	return res, nil
 }
 
 // readOne reads a logical template from a single source, preferring the

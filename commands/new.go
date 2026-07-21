@@ -17,10 +17,7 @@ func (a *App) newCmd() *cobra.Command {
 		Use:   "new",
 		Short: "Create new things",
 	}
-	cmd.PersistentFlags().StringP("template-dir", "t", "", "Path to custom template directory")
-	cmd.PersistentFlags().String("template-url", "", "Git URL of a template repository to clone and use (ssh via ssh-agent, or anonymous http(s))")
-	cmd.PersistentFlags().String("template-ref", "", "Git branch, tag, or ref to use with --template-url (default: the remote's default branch)")
-	cmd.PersistentFlags().Bool("ssh-accept-new", false, "Automatically trust unknown ssh host keys and add them to known_hosts (changed keys still fail)")
+	addTemplateSourceFlags(cmd)
 	cmd.AddCommand(a.newModuleCmd())
 	cmd.AddCommand(a.newClassCmd())
 	cmd.AddCommand(a.newDefinedTypeCmd())

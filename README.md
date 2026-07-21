@@ -34,7 +34,7 @@ planned functionality.
 | Template override  |                | ✅ Working  |
 | Remote templates   |                | ✅ Working  |
 | `templates`        | `dump`         | ✅ Working  |
-| `templates`        | `resolve`      | 🔲 Planned |
+| `templates`        | `resolve`      | ✅ Working  |
 | `build`            |                | ✅ Working  |
 | `release`          |                | ✅ Working  |
 | `validate`         |                | ✅ Working  |
@@ -242,6 +242,33 @@ jig templates dump ~/.config/jig/templates
 
 You can then edit the files in the destination directory and point jig at them
 using `--template-dir` or the `template_dir` config key.
+
+### `jig templates resolve`
+
+Shows where a logical template name resolves from, for debugging custom
+template setups. It reports which template source is in effect (flags, the
+module's `jig.toml`, the config file, or the embedded defaults), every path
+checked in order, and the winning file. The lookup is the same one the
+scaffolding commands use, so the result is exactly what `jig new` would
+render.
+```
+jig templates resolve <name>
+```
+
+For example, inside a module directory:
+```console
+$ jig templates resolve class/class.pp --template-dir ~/.config/jig/templates
+external template directory: /home/me/.config/jig/templates (from --template-dir flag)
+  looking for /home/me/.config/jig/templates/class/class.pp.tmpl (external) ... not found
+  looking for /home/me/.config/jig/templates/class/class.pp (external) ... not found
+not found in external template directory, falling back to embedded templates
+  looking for templates/class/class.pp.tmpl (embedded) ... found
+resolved class/class.pp to embedded template templates/class/class.pp.tmpl (rendered with text/template)
+```
+
+It accepts the same `--template-dir`, `--template-url`, `--template-ref`, and
+`--ssh-accept-new` flags as `jig new`, and exits non-zero if the name does not
+resolve in any source.
 
 ### `jig build`
 

@@ -20,7 +20,18 @@ type templateSource struct {
 	URL     string
 	Ref     string
 	Commit  string
+	Origin  string // human-readable provenance, e.g. "--template-dir flag"
 	cleanup func()
+}
+
+// addTemplateSourceFlags registers the persistent flags that feed
+// resolveTemplateSource on a parent command, so every subcommand accepts the
+// same template source options.
+func addTemplateSourceFlags(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringP("template-dir", "t", "", "Path to custom template directory")
+	cmd.PersistentFlags().String("template-url", "", "Git URL of a template repository to clone and use (ssh via ssh-agent, or anonymous http(s))")
+	cmd.PersistentFlags().String("template-ref", "", "Git branch, tag, or ref to use with --template-url (default: the remote's default branch)")
+	cmd.PersistentFlags().Bool("ssh-accept-new", false, "Automatically trust unknown ssh host keys and add them to known_hosts (changed keys still fail)")
 }
 
 // Cleanup removes the temporary clone, if any. Safe to call more than once.
@@ -48,6 +59,14 @@ func (a *App) resolveTemplateSource(cmd *cobra.Command, moduleDir string) (*temp
 		return nil, fmt.Errorf("--template-url and --template-dir are mutually exclusive")
 	}
 
+	origin := ""
+	switch {
+	case url != "":
+		origin = "--template-url flag"
+	case dir != "":
+		origin = "--template-dir flag"
+	}
+
 	if url == "" && dir == "" && moduleDir != "" {
 		moduleConfig, err := config.LoadModuleConfig(moduleDir)
 		if err != nil {
@@ -58,6 +77,7 @@ func (a *App) resolveTemplateSource(cmd *cobra.Command, moduleDir string) (*temp
 			if ref == "" {
 				ref = moduleConfig.Template.Ref
 			}
+			origin = fmt.Sprintf("[template] section of %s", filepath.Join(moduleDir, config.ModuleConfigFileName))
 		}
 		if meta, err := module.ReadMetadata(filepath.Join(moduleDir, "metadata.json")); err == nil && meta.HasTemplateSettings() {
 			fmt.Println("warning: template settings in metadata.json are not supported; move template-url/template-ref/template-commit to the [template] section of jig.toml and remove them from metadata.json")
@@ -70,8 +90,11 @@ func (a *App) resolveTemplateSource(cmd *cobra.Command, moduleDir string) (*temp
 		}
 		if dir == "" {
 			dir = a.Config.TemplateDir
+			if dir != "" {
+				origin = "template_dir from config"
+			}
 		}
-		return &templateSource{Dir: dir}, nil
+		return &templateSource{Dir: dir, Origin: origin}, nil
 	}
 
 	acceptNew, _ := flags.GetBool("ssh-accept-new")
@@ -101,6 +124,7 @@ func (a *App) resolveTemplateSource(cmd *cobra.Command, moduleDir string) (*temp
 		URL:     url,
 		Ref:     ref,
 		Commit:  res.Commit,
+		Origin:  origin,
 		cleanup: res.Cleanup,
 	}, nil
 }

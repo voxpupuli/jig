@@ -293,6 +293,126 @@ func TestRender_EmptyTemplateName(t *testing.T) {
 	}
 }
 
+// --- Explain ---
+
+func TestExplain(t *testing.T) {
+	t.Run("embedded .tmpl winner with no external dir", func(t *testing.T) {
+		r := NewRenderer()
+		res, err := r.Explain("class/class.pp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Found {
+			t.Fatal("expected class/class.pp to be found")
+		}
+		if res.Source != SourceEmbedded {
+			t.Errorf("Source: got %q, want %q", res.Source, SourceEmbedded)
+		}
+		if res.Path != "templates/class/class.pp.tmpl" {
+			t.Errorf("Path: got %q, want embedded .tmpl path", res.Path)
+		}
+		if !res.IsTemplate {
+			t.Error("expected IsTemplate for a .tmpl winner")
+		}
+		if res.ExternalDir != "" {
+			t.Errorf("ExternalDir: got %q, want empty", res.ExternalDir)
+		}
+		// Only the embedded source is checked: .tmpl found on the first step.
+		if len(res.Steps) != 1 || !res.Steps[0].Found {
+			t.Errorf("Steps: got %+v, want one found step", res.Steps)
+		}
+	})
+
+	t.Run("external miss falls through to embedded and records steps", func(t *testing.T) {
+		dir := t.TempDir()
+		r := NewRendererWithExternalDir(dir)
+		res, err := r.Explain("class/class.pp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Found || res.Source != SourceEmbedded {
+			t.Fatalf("expected embedded fallback, got %+v", res)
+		}
+		// Two external misses (.tmpl, plain) then the embedded .tmpl hit.
+		if len(res.Steps) != 3 {
+			t.Fatalf("Steps: got %d, want 3: %+v", len(res.Steps), res.Steps)
+		}
+		for _, step := range res.Steps[:2] {
+			if step.Source != SourceExternal || step.Found {
+				t.Errorf("expected not-found external step, got %+v", step)
+			}
+			if !strings.HasPrefix(step.Path, dir) {
+				t.Errorf("external step path %q should be under %q", step.Path, dir)
+			}
+		}
+		if res.Steps[2].Source != SourceEmbedded || !res.Steps[2].Found {
+			t.Errorf("expected found embedded step, got %+v", res.Steps[2])
+		}
+	})
+
+	t.Run("external verbatim winner records the .tmpl miss first", func(t *testing.T) {
+		dir := t.TempDir()
+		writeExternalTemplate(t, dir, "module/README.md", "plain readme")
+
+		r := NewRendererWithExternalDir(dir)
+		res, err := r.Explain("module/README.md")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Found || res.Source != SourceExternal {
+			t.Fatalf("expected external winner, got %+v", res)
+		}
+		if res.IsTemplate {
+			t.Error("expected verbatim winner, got IsTemplate")
+		}
+		if res.Path != filepath.Join(dir, "module", "README.md") {
+			t.Errorf("Path: got %q", res.Path)
+		}
+		if len(res.Steps) != 2 || res.Steps[0].Found || !res.Steps[1].Found {
+			t.Errorf("Steps: got %+v, want .tmpl miss then plain hit", res.Steps)
+		}
+	})
+
+	t.Run("not found anywhere returns all steps and Found false", func(t *testing.T) {
+		dir := t.TempDir()
+		r := NewRendererWithExternalDir(dir)
+		res, err := r.Explain("nonexistent/nothing.pp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Found || res.Path != "" || res.Source != "" {
+			t.Errorf("expected not-found resolution, got %+v", res)
+		}
+		if len(res.Steps) != 4 {
+			t.Errorf("Steps: got %d, want 4 misses: %+v", len(res.Steps), res.Steps)
+		}
+		for _, step := range res.Steps {
+			if step.Found {
+				t.Errorf("expected all steps not found, got %+v", step)
+			}
+		}
+	})
+
+	t.Run("both variants in one source is an error, matching Render", func(t *testing.T) {
+		dir := t.TempDir()
+		writeExternalTemplate(t, dir, "module/hiera.yaml", "plain")
+		writeExternalTemplate(t, dir, "module/hiera.yaml.tmpl", "templated")
+
+		r := NewRendererWithExternalDir(dir)
+		_, err := r.Explain("module/hiera.yaml")
+		if err == nil || !strings.Contains(err.Error(), "would produce the same file") {
+			t.Errorf("expected same-destination collision error, got %v", err)
+		}
+	})
+
+	t.Run("traversal name is rejected", func(t *testing.T) {
+		r := NewRendererWithExternalDir(t.TempDir())
+		if _, err := r.Explain("../../etc/passwd"); err == nil {
+			t.Error("expected error for traversal name, got nil")
+		}
+	})
+}
+
 // --- ListTree ---
 
 func TestListTree(t *testing.T) {
