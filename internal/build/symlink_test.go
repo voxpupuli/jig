@@ -163,9 +163,9 @@ func TestDoBuild_SymlinkWarns(t *testing.T) {
 	}
 }
 
-// TestDoBuild_IgnoredSymlinkSilent verifies a symlink that .pdkignore already
-// excludes does NOT warn. The fixture ignores /spec/, so a symlink under spec/
-// should be pruned silently. Precedence: ignore match wins over symlink check.
+// TestDoBuild_IgnoredSymlinkSilent verifies a symlink the build filter already
+// excludes does NOT warn. The spec allowlist excludes spec/, so a symlink under
+// spec/ should be pruned silently. Precedence: filter wins over symlink check.
 func TestDoBuild_IgnoredSymlinkSilent(t *testing.T) {
 	dir := makeBuildDir(t, "myuser", "mymodule")
 	withSymlinkSupport(t, dir)

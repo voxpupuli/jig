@@ -4,6 +4,7 @@ package template
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -46,9 +47,9 @@ func TestNewRendererWithExternalDir(t *testing.T) {
 // --- Render with embedded templates ---
 
 func TestRender_EmbeddedTemplate(t *testing.T) {
-	t.Run("renders empty template", func(t *testing.T) {
+	t.Run("renders empty verbatim file", func(t *testing.T) {
 		r := NewRenderer()
-		out, err := r.Render("common/gitkeep", nil)
+		out, err := r.Render("module/data/.gitkeep", nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -57,7 +58,7 @@ func TestRender_EmbeddedTemplate(t *testing.T) {
 		}
 	})
 
-	t.Run("renders template with data", func(t *testing.T) {
+	t.Run("logical name resolves .tmpl variant and renders with data", func(t *testing.T) {
 		r := NewRenderer()
 		data := struct{ ModuleName string }{ModuleName: "mymodule"}
 		out, err := r.Render("module/manifests/init.pp", data)
@@ -66,6 +67,21 @@ func TestRender_EmbeddedTemplate(t *testing.T) {
 		}
 		if !strings.Contains(out, "mymodule") {
 			t.Errorf("expected output to contain %q, got %q", "mymodule", out)
+		}
+	})
+
+	t.Run("verbatim file is returned as-is", func(t *testing.T) {
+		r := NewRenderer()
+		out, err := r.Render("module/Gemfile", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		embedded, err := embeddedTemplates.ReadFile("templates/module/Gemfile")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out != string(embedded) {
+			t.Errorf("verbatim output does not match embedded content")
 		}
 	})
 
@@ -98,17 +114,45 @@ func TestRender_EmbeddedTemplate(t *testing.T) {
 // --- Render with external dir ---
 
 func TestRender_ExternalDir(t *testing.T) {
-	t.Run("uses external template when present", func(t *testing.T) {
+	t.Run("external .tmpl overrides embedded and is rendered", func(t *testing.T) {
 		dir := t.TempDir()
-		writeExternalTemplate(t, dir, "common/gitkeep", "custom content")
+		writeExternalTemplate(t, dir, "module/hiera.yaml.tmpl", "custom {{.ModuleName}}")
 
 		r := NewRendererWithExternalDir(dir)
-		out, err := r.Render("common/gitkeep", nil)
+		out, err := r.Render("module/hiera.yaml", struct{ ModuleName string }{"mymodule"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if out != "custom content" {
-			t.Errorf("expected %q, got %q", "custom content", out)
+		if out != "custom mymodule" {
+			t.Errorf("expected %q, got %q", "custom mymodule", out)
+		}
+	})
+
+	t.Run("external verbatim file overrides embedded .tmpl by destination", func(t *testing.T) {
+		dir := t.TempDir()
+		// Embedded has module/README.md.tmpl; a plain external README.md
+		// must win and be copied without rendering.
+		writeExternalTemplate(t, dir, "module/README.md", "plain readme")
+
+		r := NewRendererWithExternalDir(dir)
+		out, err := r.Render("module/README.md", struct{ ModuleName string }{"mymodule"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if out != "plain readme" {
+			t.Errorf("expected %q, got %q", "plain readme", out)
+		}
+	})
+
+	t.Run("both variants in external dir is an error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeExternalTemplate(t, dir, "module/hiera.yaml", "plain")
+		writeExternalTemplate(t, dir, "module/hiera.yaml.tmpl", "templated")
+
+		r := NewRendererWithExternalDir(dir)
+		_, err := r.Render("module/hiera.yaml", nil)
+		if err == nil || !strings.Contains(err.Error(), "would produce the same file") {
+			t.Errorf("expected same-destination collision error, got %v", err)
 		}
 	})
 
@@ -117,7 +161,7 @@ func TestRender_ExternalDir(t *testing.T) {
 		// External dir exists but has no templates in it
 
 		r := NewRendererWithExternalDir(dir)
-		out, err := r.Render("common/gitkeep", nil)
+		out, err := r.Render("module/data/.gitkeep", nil)
 		if err != nil {
 			t.Fatalf("unexpected error on fallback: %v", err)
 		}
@@ -130,7 +174,7 @@ func TestRender_ExternalDir(t *testing.T) {
 	t.Run("external dir does not exist falls back to embedded", func(t *testing.T) {
 		r := NewRendererWithExternalDir("/nonexistent/dir")
 		// The external file won't be found (IsNotExist), should fall back
-		out, err := r.Render("common/gitkeep", nil)
+		out, err := r.Render("module/data/.gitkeep", nil)
 		if err != nil {
 			t.Fatalf("unexpected error on fallback from nonexistent dir: %v", err)
 		}
@@ -141,7 +185,7 @@ func TestRender_ExternalDir(t *testing.T) {
 
 	t.Run("external file unreadable returns error", func(t *testing.T) {
 		dir := t.TempDir()
-		path := filepath.Join(dir, "common", "gitkeep")
+		path := filepath.Join(dir, "module", "hiera.yaml")
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			t.Fatal(err)
 		}
@@ -155,7 +199,7 @@ func TestRender_ExternalDir(t *testing.T) {
 		t.Cleanup(func() { os.Chmod(path, 0644) })
 
 		r := NewRendererWithExternalDir(dir)
-		_, err := r.Render("common/gitkeep", nil)
+		_, err := r.Render("module/hiera.yaml", nil)
 		if err == nil {
 			t.Error("expected error for unreadable external template, got nil")
 		}
@@ -163,12 +207,28 @@ func TestRender_ExternalDir(t *testing.T) {
 
 	t.Run("external template with invalid syntax returns error", func(t *testing.T) {
 		dir := t.TempDir()
-		writeExternalTemplate(t, dir, "common/gitkeep", "{{ .Unclosed")
+		writeExternalTemplate(t, dir, "module/hiera.yaml.tmpl", "{{ .Unclosed")
 
 		r := NewRendererWithExternalDir(dir)
-		_, err := r.Render("common/gitkeep", nil)
+		_, err := r.Render("module/hiera.yaml", nil)
 		if err == nil {
 			t.Error("expected error for invalid template syntax, got nil")
+		}
+	})
+
+	t.Run("verbatim file with template delimiters is copied unrendered", func(t *testing.T) {
+		// A pre-2.0 style tree: template vars in a file without the .tmpl
+		// suffix. It must be copied as-is.
+		dir := t.TempDir()
+		writeExternalTemplate(t, dir, "module/hiera.yaml", "hello {{.ModuleName}}")
+
+		r := NewRendererWithExternalDir(dir)
+		out, err := r.Render("module/hiera.yaml", struct{ ModuleName string }{"mymodule"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if out != "hello {{.ModuleName}}" {
+			t.Errorf("expected verbatim copy, got %q", out)
 		}
 	})
 }
@@ -180,10 +240,10 @@ func TestRender_MissingDataField(t *testing.T) {
 	// rather than erroring. This documents that behavior -- if missingkey=error
 	// is ever added, these tests will need updating.
 	dir := t.TempDir()
-	writeExternalTemplate(t, dir, "common/gitkeep", "hello {{.MissingField}}")
+	writeExternalTemplate(t, dir, "module/hiera.yaml.tmpl", "hello {{.MissingField}}")
 
 	r := NewRendererWithExternalDir(dir)
-	out, err := r.Render("common/gitkeep", nil)
+	out, err := r.Render("module/hiera.yaml", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -204,7 +264,7 @@ func TestRender_PathTraversal(t *testing.T) {
 		templateName string
 	}{
 		{"dot dot", "../../etc/passwd"},
-		{"dot dot in component", "common/../../etc/passwd"},
+		{"dot dot in component", "module/../../etc/passwd"},
 		{"absolute path", "/etc/passwd"},
 	}
 
@@ -233,6 +293,224 @@ func TestRender_EmptyTemplateName(t *testing.T) {
 	}
 }
 
+// --- Explain ---
+
+func TestExplain(t *testing.T) {
+	t.Run("embedded .tmpl winner with no external dir", func(t *testing.T) {
+		r := NewRenderer()
+		res, err := r.Explain("class/class.pp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Found {
+			t.Fatal("expected class/class.pp to be found")
+		}
+		if res.Source != SourceEmbedded {
+			t.Errorf("Source: got %q, want %q", res.Source, SourceEmbedded)
+		}
+		if res.Path != "templates/class/class.pp.tmpl" {
+			t.Errorf("Path: got %q, want embedded .tmpl path", res.Path)
+		}
+		if !res.IsTemplate {
+			t.Error("expected IsTemplate for a .tmpl winner")
+		}
+		if res.ExternalDir != "" {
+			t.Errorf("ExternalDir: got %q, want empty", res.ExternalDir)
+		}
+		// Only the embedded source is checked: .tmpl found on the first step.
+		if len(res.Steps) != 1 || !res.Steps[0].Found {
+			t.Errorf("Steps: got %+v, want one found step", res.Steps)
+		}
+	})
+
+	t.Run("external miss falls through to embedded and records steps", func(t *testing.T) {
+		dir := t.TempDir()
+		r := NewRendererWithExternalDir(dir)
+		res, err := r.Explain("class/class.pp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Found || res.Source != SourceEmbedded {
+			t.Fatalf("expected embedded fallback, got %+v", res)
+		}
+		// Two external misses (.tmpl, plain) then the embedded .tmpl hit.
+		if len(res.Steps) != 3 {
+			t.Fatalf("Steps: got %d, want 3: %+v", len(res.Steps), res.Steps)
+		}
+		for _, step := range res.Steps[:2] {
+			if step.Source != SourceExternal || step.Found {
+				t.Errorf("expected not-found external step, got %+v", step)
+			}
+			if !strings.HasPrefix(step.Path, dir) {
+				t.Errorf("external step path %q should be under %q", step.Path, dir)
+			}
+		}
+		if res.Steps[2].Source != SourceEmbedded || !res.Steps[2].Found {
+			t.Errorf("expected found embedded step, got %+v", res.Steps[2])
+		}
+	})
+
+	t.Run("external verbatim winner records the .tmpl miss first", func(t *testing.T) {
+		dir := t.TempDir()
+		writeExternalTemplate(t, dir, "module/README.md", "plain readme")
+
+		r := NewRendererWithExternalDir(dir)
+		res, err := r.Explain("module/README.md")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !res.Found || res.Source != SourceExternal {
+			t.Fatalf("expected external winner, got %+v", res)
+		}
+		if res.IsTemplate {
+			t.Error("expected verbatim winner, got IsTemplate")
+		}
+		if res.Path != filepath.Join(dir, "module", "README.md") {
+			t.Errorf("Path: got %q", res.Path)
+		}
+		if len(res.Steps) != 2 || res.Steps[0].Found || !res.Steps[1].Found {
+			t.Errorf("Steps: got %+v, want .tmpl miss then plain hit", res.Steps)
+		}
+	})
+
+	t.Run("not found anywhere returns all steps and Found false", func(t *testing.T) {
+		dir := t.TempDir()
+		r := NewRendererWithExternalDir(dir)
+		res, err := r.Explain("nonexistent/nothing.pp")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Found || res.Path != "" || res.Source != "" {
+			t.Errorf("expected not-found resolution, got %+v", res)
+		}
+		if len(res.Steps) != 4 {
+			t.Errorf("Steps: got %d, want 4 misses: %+v", len(res.Steps), res.Steps)
+		}
+		for _, step := range res.Steps {
+			if step.Found {
+				t.Errorf("expected all steps not found, got %+v", step)
+			}
+		}
+	})
+
+	t.Run("both variants in one source is an error, matching Render", func(t *testing.T) {
+		dir := t.TempDir()
+		writeExternalTemplate(t, dir, "module/hiera.yaml", "plain")
+		writeExternalTemplate(t, dir, "module/hiera.yaml.tmpl", "templated")
+
+		r := NewRendererWithExternalDir(dir)
+		_, err := r.Explain("module/hiera.yaml")
+		if err == nil || !strings.Contains(err.Error(), "would produce the same file") {
+			t.Errorf("expected same-destination collision error, got %v", err)
+		}
+	})
+
+	t.Run("traversal name is rejected", func(t *testing.T) {
+		r := NewRendererWithExternalDir(t.TempDir())
+		if _, err := r.Explain("../../etc/passwd"); err == nil {
+			t.Error("expected error for traversal name, got nil")
+		}
+	})
+}
+
+// --- ListTree ---
+
+func TestListTree(t *testing.T) {
+	t.Run("embedded module tree uses logical destination paths", func(t *testing.T) {
+		r := NewRenderer()
+		names, err := r.ListTree("module")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		expected := []string{
+			".devcontainer/devcontainer.json",
+			".gitignore",
+			"README.md",
+			"data/.gitkeep",
+			"manifests/init.pp",
+			"spec/classes/init_spec.rb",
+		}
+		for _, want := range expected {
+			if !slices.Contains(names, want) {
+				t.Errorf("expected ListTree to contain %q, got %v", want, names)
+			}
+		}
+		for _, name := range names {
+			if strings.HasSuffix(name, TmplSuffix) {
+				t.Errorf("logical name %q must not keep the %s suffix", name, TmplSuffix)
+			}
+		}
+	})
+
+	t.Run("external files are unioned in", func(t *testing.T) {
+		dir := t.TempDir()
+		writeExternalTemplate(t, dir, "module/.github/workflows/ci.yml", "on: push\n")
+		writeExternalTemplate(t, dir, "module/CONTRIBUTING.md.tmpl", "# {{.ModuleName}}\n")
+
+		r := NewRendererWithExternalDir(dir)
+		names, err := r.ListTree("module")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		for _, want := range []string{".github/workflows/ci.yml", "CONTRIBUTING.md", ".gitignore"} {
+			if !slices.Contains(names, want) {
+				t.Errorf("expected ListTree to contain %q, got %v", want, names)
+			}
+		}
+	})
+
+	t.Run("external override does not duplicate the entry", func(t *testing.T) {
+		dir := t.TempDir()
+		writeExternalTemplate(t, dir, "module/README.md", "plain readme")
+
+		r := NewRendererWithExternalDir(dir)
+		names, err := r.ListTree("module")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		count := 0
+		for _, name := range names {
+			if name == "README.md" {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected exactly one README.md entry, got %d in %v", count, names)
+		}
+	})
+
+	t.Run("both variants in one source is an error", func(t *testing.T) {
+		dir := t.TempDir()
+		writeExternalTemplate(t, dir, "module/foo.yml", "plain")
+		writeExternalTemplate(t, dir, "module/foo.yml.tmpl", "templated")
+
+		r := NewRendererWithExternalDir(dir)
+		_, err := r.ListTree("module")
+		if err == nil || !strings.Contains(err.Error(), "would produce the same file") {
+			t.Errorf("expected same-destination collision error, got %v", err)
+		}
+	})
+
+	t.Run("results are sorted", func(t *testing.T) {
+		r := NewRenderer()
+		names, err := r.ListTree("module")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !slices.IsSorted(names) {
+			t.Errorf("expected sorted names, got %v", names)
+		}
+	})
+
+	t.Run("invalid root returns error", func(t *testing.T) {
+		r := NewRenderer()
+		if _, err := r.ListTree("../etc"); err == nil {
+			t.Error("expected error for traversal root, got nil")
+		}
+	})
+}
+
 // --- DumpTemplates ---
 
 func TestDumpTemplates(t *testing.T) {
@@ -244,16 +522,18 @@ func TestDumpTemplates(t *testing.T) {
 
 		// Spot-check a known set of files
 		expectedFiles := []string{
-			"common/gitkeep",
-			"module/manifests/init.pp",
-			"module/README.md",
+			"module/manifests/init.pp.tmpl",
+			"module/README.md.tmpl",
 			"module/Gemfile",
-			"module/Rakefile",
+			"module/Rakefile.tmpl",
 			"module/hiera.yaml",
-			"class/class.pp",
-			"class/class_spec.rb",
-			"type/defined_type.pp",
-			"type/defined_type_spec.rb",
+			"module/.gitignore",
+			"module/.devcontainer/devcontainer.json",
+			"module/data/.gitkeep",
+			"class/class.pp.tmpl",
+			"class/class_spec.rb.tmpl",
+			"type/defined_type.pp.tmpl",
+			"type/defined_type_spec.rb.tmpl",
 		}
 		for _, f := range expectedFiles {
 			path := filepath.Join(dest, f)
@@ -270,12 +550,12 @@ func TestDumpTemplates(t *testing.T) {
 		}
 
 		// Read a dumped file and compare to what the renderer produces
-		dumped, err := os.ReadFile(filepath.Join(dest, "common/gitkeep"))
+		dumped, err := os.ReadFile(filepath.Join(dest, "module/Gemfile"))
 		if err != nil {
 			t.Fatalf("could not read dumped file: %v", err)
 		}
 
-		embedded, err := embeddedTemplates.ReadFile("templates/common/gitkeep")
+		embedded, err := embeddedTemplates.ReadFile("templates/module/Gemfile")
 		if err != nil {
 			t.Fatalf("could not read embedded file: %v", err)
 		}

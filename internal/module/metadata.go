@@ -22,10 +22,12 @@ type Metadata struct {
 	OperatingSystem []OperatingSystem `json:"operatingsystem_support"`
 	Tags            []string          `json:"tags"`
 	PdkVersion      string            `json:"pdk-version"`
-	// TemplateURL, TemplateRef, and TemplateCommit record which template
-	// repository the module was scaffolded from, so later jig invocations
-	// in the module can default to the same source. Trust-related settings
-	// (like ssh-accept-new) deliberately never live here: metadata.json is
+	// TemplateURL, TemplateRef, and TemplateCommit were written by jig 1.x
+	// to record which template repository the module was scaffolded from.
+	// jig 2.x records template provenance in jig.toml instead and does not
+	// support these keys; they are parsed only so their presence can be
+	// detected and warned about. Trust-related settings (like
+	// ssh-accept-new) deliberately never live in either file: both are
 	// shared via the module repository and must not be able to change
 	// security decisions for other users.
 	TemplateURL    string `json:"template-url,omitempty"`
@@ -97,6 +99,12 @@ func (m Metadata) Write(path string) error {
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(m)
+}
+
+// HasTemplateSettings reports whether the metadata carries any of the
+// unsupported jig 1.x template keys, so callers can warn about them.
+func (m Metadata) HasTemplateSettings() bool {
+	return m.TemplateURL != "" || m.TemplateRef != "" || m.TemplateCommit != ""
 }
 
 func (m Metadata) ModuleName() string {

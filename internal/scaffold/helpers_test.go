@@ -18,6 +18,23 @@ func (f *fakeRenderer) Render(_ string, _ any) (string, error) {
 	return f.output, f.err
 }
 
+func (f *fakeRenderer) ListTree(_ string) ([]string, error) {
+	return nil, f.err
+}
+
+// writeModuleTemplate writes a file into the module/ subtree of an external
+// template dir, creating parent directories as needed.
+func writeModuleTemplate(t *testing.T, tmplDir, name, content string) {
+	t.Helper()
+	path := filepath.Join(tmplDir, "module", filepath.FromSlash(name))
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // makeModuleDir creates a temp directory with a minimal valid metadata.json,
 // suitable for use as a WorkDir in tests.
 func makeModuleDir(t *testing.T, forgeUser, moduleName string) string {
@@ -56,10 +73,10 @@ func makeFunctionTemplateDir(t *testing.T) string {
 	if err := os.MkdirAll(funcDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(funcDir, "function.pp"), []byte("# {{.Name}}\nfunction {{.Name}}() >> Any {\n}\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(funcDir, "function.pp.tmpl"), []byte("# {{.Name}}\nfunction {{.Name}}() >> Any {\n}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(funcDir, "function_spec.rb"), []byte("# frozen_string_literal: true\nrequire 'spec_helper'\ndescribe '{{.Name}}' do\nend\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(funcDir, "function_spec.rb.tmpl"), []byte("# frozen_string_literal: true\nrequire 'spec_helper'\ndescribe '{{.Name}}' do\nend\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	return dir

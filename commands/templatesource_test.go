@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,7 +71,7 @@ func TestResolveTemplateSource_Embedded(t *testing.T) {
 	a := testApp(config.Config{})
 	cmd, _ := newSubCmd(t, a, "class")
 
-	src, err := a.resolveTemplateSource(cmd, "")
+	src, err := a.resolveTemplateSource(cmd.InheritedFlags(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestResolveTemplateSource_DirPrecedence(t *testing.T) {
 	a := testApp(config.Config{TemplateDir: "/from-config"})
 	cmd, parent := newSubCmd(t, a, "class")
 
-	src, err := a.resolveTemplateSource(cmd, "")
+	src, err := a.resolveTemplateSource(cmd.InheritedFlags(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestResolveTemplateSource_DirPrecedence(t *testing.T) {
 	if err := parent.PersistentFlags().Set("template-dir", "/from-flag"); err != nil {
 		t.Fatalf("set flag: %v", err)
 	}
-	src, err = a.resolveTemplateSource(cmd, "")
+	src, err = a.resolveTemplateSource(cmd.InheritedFlags(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestResolveTemplateSource_URLAndDirConflict(t *testing.T) {
 	parent.PersistentFlags().Set("template-url", "/some/repo")
 	parent.PersistentFlags().Set("template-dir", "/some/dir")
 
-	if _, err := a.resolveTemplateSource(cmd, ""); err == nil {
+	if _, err := a.resolveTemplateSource(cmd.InheritedFlags(), ""); err == nil {
 		t.Fatal("expected an error for --template-url with --template-dir")
 	}
 }
@@ -127,7 +128,7 @@ func TestResolveTemplateSource_RefWithoutURL(t *testing.T) {
 
 	parent.PersistentFlags().Set("template-ref", "main")
 
-	if _, err := a.resolveTemplateSource(cmd, ""); err == nil {
+	if _, err := a.resolveTemplateSource(cmd.InheritedFlags(), ""); err == nil {
 		t.Fatal("expected an error for --template-ref without --template-url")
 	}
 }
@@ -141,7 +142,7 @@ func TestResolveTemplateSource_URLFlag(t *testing.T) {
 
 	parent.PersistentFlags().Set("template-url", repo)
 
-	src, err := a.resolveTemplateSource(cmd, "")
+	src, err := a.resolveTemplateSource(cmd.InheritedFlags(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -164,39 +165,118 @@ func TestResolveTemplateSource_URLFlag(t *testing.T) {
 	}
 }
 
-// Inside a module whose metadata.json records a template-url, component
-// commands must fetch from that URL with no flags at all -- the shared-team
-// case from issue #60. An explicit --template-dir must still win over the
-// recorded URL.
-func TestResolveTemplateSource_MetadataURL(t *testing.T) {
+// Inside a module whose jig.toml records a template url, component commands
+// must fetch from that URL with no flags at all -- the shared-team case from
+// issue #60. A template-url left in metadata.json by jig 1.x must not
+// interfere.
+func TestResolveTemplateSource_ModuleConfigURL(t *testing.T) {
 	repo := templateRepo(t)
 
 	moduleDir := t.TempDir()
 	meta := module.NewMetadata("mymodule", "myuser", "My Name")
-	meta.TemplateURL = repo
+	meta.TemplateURL = "/nonexistent-1x-recorded-url"
+	if err := meta.Write(filepath.Join(moduleDir, "metadata.json")); err != nil {
+		t.Fatalf("write metadata: %v", err)
+	}
+	moduleConfig := config.ModuleConfig{Template: config.ModuleTemplate{URL: repo}}
+	if err := moduleConfig.Write(moduleDir); err != nil {
+		t.Fatalf("write jig.toml: %v", err)
+	}
+
+	a := testApp(config.Config{})
+	cmd, _ := newSubCmd(t, a, "class")
+
+	src, err := a.resolveTemplateSource(cmd.InheritedFlags(), moduleDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer src.Cleanup()
+	if src.URL != repo {
+		t.Errorf("URL: got %q, want the jig.toml url %q", src.URL, repo)
+	}
+	if _, err := os.Stat(filepath.Join(src.Dir, "marker.txt")); err != nil {
+		t.Errorf("clone from jig.toml template url should contain marker.txt: %v", err)
+	}
+}
+
+// An unparseable jig.toml must fail template resolution loudly rather than
+// silently falling back to other sources.
+func TestResolveTemplateSource_InvalidModuleConfig(t *testing.T) {
+	moduleDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(moduleDir, config.ModuleConfigFileName), []byte("not = toml = ["), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := testApp(config.Config{})
+	cmd, _ := newSubCmd(t, a, "class")
+
+	if _, err := a.resolveTemplateSource(cmd.InheritedFlags(), moduleDir); err == nil {
+		t.Fatal("expected an error for invalid jig.toml")
+	}
+}
+
+// Template settings in metadata.json (written by jig 1.x) are not supported:
+// the recorded URL must be ignored -- resolution falls through to the
+// embedded templates -- and a warning must tell the user to move the
+// settings to jig.toml.
+func TestResolveTemplateSource_MetadataNotSupported(t *testing.T) {
+	moduleDir := t.TempDir()
+	meta := module.NewMetadata("mymodule", "myuser", "My Name")
+	meta.TemplateURL = "/nonexistent-1x-recorded-url"
 	if err := meta.Write(filepath.Join(moduleDir, "metadata.json")); err != nil {
 		t.Fatalf("write metadata: %v", err)
 	}
 
 	a := testApp(config.Config{})
-	cmd, parent := newSubCmd(t, a, "class")
+	cmd, _ := newSubCmd(t, a, "class")
 
-	src, err := a.resolveTemplateSource(cmd, moduleDir)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	defer src.Cleanup()
-	if _, err := os.Stat(filepath.Join(src.Dir, "marker.txt")); err != nil {
-		t.Errorf("clone from metadata template-url should contain marker.txt: %v", err)
-	}
+	out := captureStdout(t, func() {
+		src, err := a.resolveTemplateSource(cmd.InheritedFlags(), moduleDir)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		defer src.Cleanup()
+		if src.Dir != "" || src.URL != "" {
+			t.Errorf("metadata template-url must be ignored, expected embedded templates, got %+v", src)
+		}
+	})
 
-	parent.PersistentFlags().Set("template-dir", "/explicit")
-	src2, err := a.resolveTemplateSource(cmd, moduleDir)
+	if !strings.Contains(out, "warning") || !strings.Contains(out, "metadata.json") || !strings.Contains(out, "jig.toml") {
+		t.Errorf("expected a warning pointing from metadata.json to jig.toml, got output: %q", out)
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected to a pipe and returns
+// everything written, since resolveTemplateSource reports warnings via
+// fmt.Println.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	defer src2.Cleanup()
-	if src2.Dir != "/explicit" || src2.URL != "" {
-		t.Errorf("--template-dir should override the metadata URL, got %+v", src2)
-	}
+	os.Stdout = w
+
+	done := make(chan string, 1)
+	go func() {
+		var sb strings.Builder
+		buf := make([]byte, 4096)
+		for {
+			n, err := r.Read(buf)
+			if n > 0 {
+				sb.Write(buf[:n])
+			}
+			if err != nil {
+				break
+			}
+		}
+		done <- sb.String()
+	}()
+
+	fn()
+
+	_ = w.Close()
+	os.Stdout = orig
+	return <-done
 }

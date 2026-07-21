@@ -39,10 +39,11 @@ func Execute() error {
 	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug output")
 
 	rootCmd.AddCommand(app.newCmd())
+	rootCmd.AddCommand(app.renewCmd())
 	rootCmd.AddCommand(app.templatesCmd())
 	rootCmd.AddCommand(app.buildCmd())
 	rootCmd.AddCommand(app.releaseCmd())
-	rootCmd.AddCommand(app.updateCmd())
+	rootCmd.AddCommand(app.msyncCmd())
 	rootCmd.AddCommand(app.validateCmd())
 	rootCmd.AddCommand(app.testCmd())
 	rootCmd.AddCommand(app.convertCmd())

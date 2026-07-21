@@ -16,6 +16,7 @@ import (
 // so that RenderTemplates can be tested with a fake implementation.
 type Renderer interface {
 	Render(templateName string, data any) (string, error)
+	ListTree(root string) ([]string, error)
 }
 
 type Options struct {
@@ -34,6 +35,16 @@ type Options struct {
 	TemplateURL    string
 	TemplateRef    string
 	TemplateCommit string
+}
+
+// moduleTemplateData is the data every template in the module tree renders
+// with, shared by NewModule and Renew.
+type moduleTemplateData struct {
+	ModuleName string
+	ForgeUser  string
+	Author     string
+	License    string
+	ClassName  string
 }
 
 type ComponentOptions struct {
