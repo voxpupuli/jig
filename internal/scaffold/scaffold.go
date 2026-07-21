@@ -37,6 +37,16 @@ type Options struct {
 	TemplateCommit string
 }
 
+// moduleTemplateData is the data every template in the module tree renders
+// with, shared by NewModule and Renew.
+type moduleTemplateData struct {
+	ModuleName string
+	ForgeUser  string
+	Author     string
+	License    string
+	ClassName  string
+}
+
 type ComponentOptions struct {
 	Name        string
 	TemplateDir string

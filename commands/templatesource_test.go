@@ -71,7 +71,7 @@ func TestResolveTemplateSource_Embedded(t *testing.T) {
 	a := testApp(config.Config{})
 	cmd, _ := newSubCmd(t, a, "class")
 
-	src, err := a.resolveTemplateSource(cmd, "")
+	src, err := a.resolveTemplateSource(cmd.InheritedFlags(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestResolveTemplateSource_DirPrecedence(t *testing.T) {
 	a := testApp(config.Config{TemplateDir: "/from-config"})
 	cmd, parent := newSubCmd(t, a, "class")
 
-	src, err := a.resolveTemplateSource(cmd, "")
+	src, err := a.resolveTemplateSource(cmd.InheritedFlags(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestResolveTemplateSource_DirPrecedence(t *testing.T) {
 	if err := parent.PersistentFlags().Set("template-dir", "/from-flag"); err != nil {
 		t.Fatalf("set flag: %v", err)
 	}
-	src, err = a.resolveTemplateSource(cmd, "")
+	src, err = a.resolveTemplateSource(cmd.InheritedFlags(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestResolveTemplateSource_URLAndDirConflict(t *testing.T) {
 	parent.PersistentFlags().Set("template-url", "/some/repo")
 	parent.PersistentFlags().Set("template-dir", "/some/dir")
 
-	if _, err := a.resolveTemplateSource(cmd, ""); err == nil {
+	if _, err := a.resolveTemplateSource(cmd.InheritedFlags(), ""); err == nil {
 		t.Fatal("expected an error for --template-url with --template-dir")
 	}
 }
@@ -128,7 +128,7 @@ func TestResolveTemplateSource_RefWithoutURL(t *testing.T) {
 
 	parent.PersistentFlags().Set("template-ref", "main")
 
-	if _, err := a.resolveTemplateSource(cmd, ""); err == nil {
+	if _, err := a.resolveTemplateSource(cmd.InheritedFlags(), ""); err == nil {
 		t.Fatal("expected an error for --template-ref without --template-url")
 	}
 }
@@ -142,7 +142,7 @@ func TestResolveTemplateSource_URLFlag(t *testing.T) {
 
 	parent.PersistentFlags().Set("template-url", repo)
 
-	src, err := a.resolveTemplateSource(cmd, "")
+	src, err := a.resolveTemplateSource(cmd.InheritedFlags(), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestResolveTemplateSource_ModuleConfigURL(t *testing.T) {
 	a := testApp(config.Config{})
 	cmd, _ := newSubCmd(t, a, "class")
 
-	src, err := a.resolveTemplateSource(cmd, moduleDir)
+	src, err := a.resolveTemplateSource(cmd.InheritedFlags(), moduleDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestResolveTemplateSource_InvalidModuleConfig(t *testing.T) {
 	a := testApp(config.Config{})
 	cmd, _ := newSubCmd(t, a, "class")
 
-	if _, err := a.resolveTemplateSource(cmd, moduleDir); err == nil {
+	if _, err := a.resolveTemplateSource(cmd.InheritedFlags(), moduleDir); err == nil {
 		t.Fatal("expected an error for invalid jig.toml")
 	}
 }
@@ -231,7 +231,7 @@ func TestResolveTemplateSource_MetadataNotSupported(t *testing.T) {
 	cmd, _ := newSubCmd(t, a, "class")
 
 	out := captureStdout(t, func() {
-		src, err := a.resolveTemplateSource(cmd, moduleDir)
+		src, err := a.resolveTemplateSource(cmd.InheritedFlags(), moduleDir)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

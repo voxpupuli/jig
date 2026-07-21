@@ -40,7 +40,7 @@ result is exactly what "jig new" would use.`,
 				return fmt.Errorf("failed to get working directory: %w", err)
 			}
 
-			src, err := a.resolveTemplateSource(cmd, cwd)
+			src, err := a.resolveTemplateSource(cmd.InheritedFlags(), cwd)
 			if err != nil {
 				return err
 			}

@@ -74,7 +74,7 @@ func (a *App) newModuleCmd() *cobra.Command {
 
 			// No metadata.json exists yet, so only flags and config feed
 			// the template source here.
-			src, err := a.resolveTemplateSource(cmd, "")
+			src, err := a.resolveTemplateSource(cmd.InheritedFlags(), "")
 			if err != nil {
 				return err
 			}
@@ -148,7 +148,7 @@ func (a *App) componentRunE(newFn func(scaffold.ComponentOptions) error) func(*c
 			return fmt.Errorf("failed to get working directory: %w", err)
 		}
 
-		src, err := a.resolveTemplateSource(cmd, cwd)
+		src, err := a.resolveTemplateSource(cmd.InheritedFlags(), cwd)
 		if err != nil {
 			return err
 		}

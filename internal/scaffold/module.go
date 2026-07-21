@@ -84,13 +84,7 @@ func NewModule(opts Options) error {
 		return err
 	}
 
-	data := struct {
-		ModuleName string
-		ForgeUser  string
-		Author     string
-		License    string
-		ClassName  string
-	}{
+	data := moduleTemplateData{
 		ModuleName: opts.Name,
 		ForgeUser:  opts.ForgeUser,
 		Author:     opts.Author,

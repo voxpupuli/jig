@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/voxpupuli/jig/internal/config"
 	"github.com/voxpupuli/jig/internal/module"
 	"github.com/voxpupuli/jig/internal/remote"
@@ -25,8 +26,9 @@ type templateSource struct {
 }
 
 // addTemplateSourceFlags registers the persistent flags that feed
-// resolveTemplateSource on a parent command, so every subcommand accepts the
-// same template source options.
+// resolveTemplateSource. On a parent command they make every subcommand
+// accept the same template source options (read via InheritedFlags); on a
+// leaf command they are its own options (read via Flags).
 func addTemplateSourceFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringP("template-dir", "t", "", "Path to custom template directory")
 	cmd.PersistentFlags().String("template-url", "", "Git URL of a template repository to clone and use (ssh via ssh-agent, or anonymous http(s))")
@@ -49,8 +51,11 @@ func (s *templateSource) Cleanup() {
 // module lookup; `new module` uses that since no module exists yet.
 // Template keys in metadata.json (written by jig 1.x) are not supported and
 // only produce a warning.
-func (a *App) resolveTemplateSource(cmd *cobra.Command, moduleDir string) (*templateSource, error) {
-	flags := cmd.InheritedFlags()
+//
+// flags is the flag set holding the addTemplateSourceFlags flags: for
+// subcommands under a parent that registered them, cmd.InheritedFlags();
+// for a command that registered them itself, cmd.Flags().
+func (a *App) resolveTemplateSource(flags *pflag.FlagSet, moduleDir string) (*templateSource, error) {
 	url, _ := flags.GetString("template-url")
 	ref, _ := flags.GetString("template-ref")
 	dir, _ := flags.GetString("template-dir")
