@@ -16,6 +16,7 @@ import (
 // so that RenderTemplates can be tested with a fake implementation.
 type Renderer interface {
 	Render(templateName string, data any) (string, error)
+	ListTree(root string) ([]string, error)
 }
 
 type Options struct {

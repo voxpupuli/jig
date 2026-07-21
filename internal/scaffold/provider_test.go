@@ -15,10 +15,10 @@ func makeProviderTemplateDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		"provider.rb":      "# provider {{.Name}}\n",
-		"provider_spec.rb": "# provider spec {{.Name}}\n",
-		"type.rb":          "# type {{.Name | upperFirst}}\n",
-		"type_spec.rb":     "# type spec {{.Name}}\n",
+		"provider.rb.tmpl":      "# provider {{.Name}}\n",
+		"provider_spec.rb.tmpl": "# provider spec {{.Name}}\n",
+		"type.rb.tmpl":          "# type {{.Name | upperFirst}}\n",
+		"type_spec.rb.tmpl":     "# type spec {{.Name}}\n",
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(providerDir, name), []byte(content), 0644); err != nil {
@@ -189,16 +189,16 @@ func TestNewProvider_NoPartialStateOnTemplateFailure(t *testing.T) {
 	if err := os.MkdirAll(providerDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(providerDir, "provider.rb"), []byte("{{.Name}}\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(providerDir, "provider.rb.tmpl"), []byte("{{.Name}}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(providerDir, "provider_spec.rb"), []byte("{{.Name}}\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(providerDir, "provider_spec.rb.tmpl"), []byte("{{.Name}}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(providerDir, "type.rb"), []byte("{{invalid template\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(providerDir, "type.rb.tmpl"), []byte("{{invalid template\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(providerDir, "type_spec.rb"), []byte("{{.Name}}\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(providerDir, "type_spec.rb.tmpl"), []byte("{{.Name}}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 

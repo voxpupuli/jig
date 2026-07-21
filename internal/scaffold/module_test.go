@@ -35,10 +35,16 @@ func TestNewModule(t *testing.T) {
 			"CHANGELOG.md",
 			"Gemfile",
 			"Rakefile",
+			".editorconfig",
 			".gitignore",
+			".overcommit.yml",
+			".rubocop.yml",
+			".devcontainer/devcontainer.json",
 			"hiera.yaml",
 			"spec/classes/init_spec.rb",
 			"spec/spec_helper.rb",
+			"spec/spec_helper_acceptance.rb",
+			"spec/acceptance/init_spec.rb",
 			"spec/default_facts.yml",
 			"data/common.yaml",
 			"data/.gitkeep",
@@ -52,6 +58,130 @@ func TestNewModule(t *testing.T) {
 			if _, err := os.Stat(path); err != nil {
 				t.Errorf("expected file %s to exist: %v", f, err)
 			}
+		}
+	})
+
+	t.Run("unmapped files in an external template dir are written", func(t *testing.T) {
+		dir := t.TempDir()
+		tmplDir := t.TempDir()
+		// Neither of these paths has (or needs) a mapping in jig code (#36):
+		// a verbatim file with GitHub Actions syntax and a rendered .tmpl.
+		writeModuleTemplate(t, tmplDir, ".github/workflows/ci.yml", "run: ${{ matrix.ruby }}\n")
+		writeModuleTemplate(t, tmplDir, "CONTRIBUTING.md.tmpl", "# Contributing to {{.ModuleName}}\n")
+
+		opts := Options{
+			ForgeUser:   "myuser",
+			Name:        "mymodule",
+			Author:      "My Name",
+			License:     "Apache-2.0",
+			TargetDir:   dir,
+			TemplateDir: tmplDir,
+		}
+		if err := NewModule(opts); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		moduleDir := filepath.Join(dir, "mymodule")
+		ci, err := os.ReadFile(filepath.Join(moduleDir, ".github", "workflows", "ci.yml"))
+		if err != nil {
+			t.Fatalf("expected unmapped verbatim file to be written: %v", err)
+		}
+		if string(ci) != "run: ${{ matrix.ruby }}\n" {
+			t.Errorf("verbatim file must not be rendered, got %q", ci)
+		}
+
+		contributing, err := os.ReadFile(filepath.Join(moduleDir, "CONTRIBUTING.md"))
+		if err != nil {
+			t.Fatalf("expected unmapped .tmpl file to be written: %v", err)
+		}
+		if string(contributing) != "# Contributing to mymodule\n" {
+			t.Errorf(".tmpl file must be rendered with .tmpl stripped, got %q", contributing)
+		}
+
+		// Embedded files still arrive alongside the external additions.
+		if _, err := os.Stat(filepath.Join(moduleDir, ".gitignore")); err != nil {
+			t.Errorf("expected embedded .gitignore alongside external additions: %v", err)
+		}
+	})
+
+	t.Run("external template overrides embedded file at same destination", func(t *testing.T) {
+		dir := t.TempDir()
+		tmplDir := t.TempDir()
+		// Plain file overrides the embedded README.md.tmpl by destination.
+		writeModuleTemplate(t, tmplDir, "README.md", "custom readme\n")
+
+		opts := Options{
+			ForgeUser:   "myuser",
+			Name:        "mymodule",
+			Author:      "My Name",
+			License:     "Apache-2.0",
+			TargetDir:   dir,
+			TemplateDir: tmplDir,
+		}
+		if err := NewModule(opts); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		readme, err := os.ReadFile(filepath.Join(dir, "mymodule", "README.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(readme) != "custom readme\n" {
+			t.Errorf("expected external README.md to win, got %q", readme)
+		}
+	})
+
+	t.Run("reserved files in the template tree are ignored", func(t *testing.T) {
+		dir := t.TempDir()
+		tmplDir := t.TempDir()
+		writeModuleTemplate(t, tmplDir, "metadata.json", `{"name":"evil"}`)
+		writeModuleTemplate(t, tmplDir, "jig.toml", "[template]\nurl = \"evil\"\n")
+
+		opts := Options{
+			ForgeUser:   "myuser",
+			Name:        "mymodule",
+			Author:      "My Name",
+			License:     "Apache-2.0",
+			TargetDir:   dir,
+			TemplateDir: tmplDir,
+		}
+		if err := NewModule(opts); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		m, err := GetMetadata(filepath.Join(dir, "mymodule"))
+		if err != nil {
+			t.Fatalf("could not read generated metadata: %v", err)
+		}
+		if m.Name != "myuser-mymodule" {
+			t.Errorf("metadata.json must come from jig, not the template tree; got name %q", m.Name)
+		}
+
+		cfg, err := config.LoadModuleConfig(filepath.Join(dir, "mymodule"))
+		if err != nil {
+			t.Fatalf("could not read generated jig.toml: %v", err)
+		}
+		if cfg.Template.URL == "evil" {
+			t.Error("jig.toml must come from jig, not the template tree")
+		}
+	})
+
+	t.Run("conflicting template variants fail the scaffold", func(t *testing.T) {
+		dir := t.TempDir()
+		tmplDir := t.TempDir()
+		writeModuleTemplate(t, tmplDir, "foo.yml", "plain\n")
+		writeModuleTemplate(t, tmplDir, "foo.yml.tmpl", "templated\n")
+
+		opts := Options{
+			ForgeUser:   "myuser",
+			Name:        "mymodule",
+			Author:      "My Name",
+			License:     "Apache-2.0",
+			TargetDir:   dir,
+			TemplateDir: tmplDir,
+		}
+		if err := NewModule(opts); err == nil {
+			t.Error("expected error for foo.yml alongside foo.yml.tmpl, got nil")
 		}
 	})
 

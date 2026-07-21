@@ -16,11 +16,11 @@ func makeTransportTemplateDir(t *testing.T) string {
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		filepath.Join(transportDir, "transport.rb"):      "# transport {{.Name}}\n",
-		filepath.Join(transportDir, "transport_spec.rb"): "# transport spec {{.Name}}\n",
-		filepath.Join(transportDir, "device.rb"):         "# device {{.Name | pascalCase}}\n",
-		filepath.Join(schemaDir, "schema.rb"):            "# schema {{.Name | pascalCase}}\n",
-		filepath.Join(schemaDir, "schema_spec.rb"):       "# schema spec {{.Name}}\n",
+		filepath.Join(transportDir, "transport.rb.tmpl"):      "# transport {{.Name}}\n",
+		filepath.Join(transportDir, "transport_spec.rb.tmpl"): "# transport spec {{.Name}}\n",
+		filepath.Join(transportDir, "device.rb.tmpl"):         "# device {{.Name | pascalCase}}\n",
+		filepath.Join(schemaDir, "schema.rb.tmpl"):            "# schema {{.Name | pascalCase}}\n",
+		filepath.Join(schemaDir, "schema_spec.rb.tmpl"):       "# schema spec {{.Name}}\n",
 	}
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -177,11 +177,11 @@ func TestNewTransport_NoPartialStateOnTemplateFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	files := map[string]string{
-		filepath.Join(transportDir, "transport.rb"):      "{{.Name}}\n",
-		filepath.Join(transportDir, "transport_spec.rb"): "{{.Name}}\n",
-		filepath.Join(transportDir, "device.rb"):         "{{invalid template\n",
-		filepath.Join(schemaDir, "schema.rb"):            "{{.Name}}\n",
-		filepath.Join(schemaDir, "schema_spec.rb"):       "{{.Name}}\n",
+		filepath.Join(transportDir, "transport.rb.tmpl"):      "{{.Name}}\n",
+		filepath.Join(transportDir, "transport_spec.rb.tmpl"): "{{.Name}}\n",
+		filepath.Join(transportDir, "device.rb.tmpl"):         "{{invalid template\n",
+		filepath.Join(schemaDir, "schema.rb"):                 "{{.Name}}\n",
+		filepath.Join(schemaDir, "schema_spec.rb"):            "{{.Name}}\n",
 	}
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
