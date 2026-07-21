@@ -43,6 +43,9 @@ func NewModule(opts Options) error {
 	meta.License = opts.License
 	meta.Summary = opts.Summary
 	meta.Source = opts.Source
+	meta.TemplateURL = opts.TemplateURL
+	meta.TemplateRef = opts.TemplateRef
+	meta.TemplateCommit = opts.TemplateCommit
 
 	if err := meta.Write(filepath.Join(moduleDir, "metadata.json")); err != nil {
 		return fmt.Errorf("failed to write metadata.json: %w", err)

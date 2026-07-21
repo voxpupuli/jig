@@ -18,6 +18,9 @@ func (a *App) newCmd() *cobra.Command {
 		Short: "Create new things",
 	}
 	cmd.PersistentFlags().StringP("template-dir", "t", "", "Path to custom template directory")
+	cmd.PersistentFlags().String("template-url", "", "Git URL of a template repository to clone and use (ssh via ssh-agent, or anonymous http(s))")
+	cmd.PersistentFlags().String("template-ref", "", "Git branch, tag, or ref to use with --template-url (default: the remote's default branch)")
+	cmd.PersistentFlags().Bool("ssh-accept-new", false, "Automatically trust unknown ssh host keys and add them to known_hosts (changed keys still fail)")
 	cmd.AddCommand(a.newModuleCmd())
 	cmd.AddCommand(a.newClassCmd())
 	cmd.AddCommand(a.newDefinedTypeCmd())
@@ -42,11 +45,6 @@ func (a *App) newModuleCmd() *cobra.Command {
 			source, _ := cmd.Flags().GetString("source")
 			author, _ := cmd.Flags().GetString("author")
 			force, _ := cmd.Flags().GetBool("force")
-			templateDir, _ := cmd.InheritedFlags().GetString("template-dir")
-
-			if templateDir == "" {
-				templateDir = a.Config.TemplateDir
-			}
 
 			if forgeUser == "" {
 				forgeUser = a.Config.ForgeUsername
@@ -77,15 +75,26 @@ func (a *App) newModuleCmd() *cobra.Command {
 				license = "Apache-2.0"
 			}
 
+			// No metadata.json exists yet, so only flags and config feed
+			// the template source here.
+			src, err := a.resolveTemplateSource(cmd, "")
+			if err != nil {
+				return err
+			}
+			defer src.Cleanup()
+
 			opts := scaffold.Options{
-				ForgeUser:   forgeUser,
-				Name:        args[0],
-				License:     license,
-				Summary:     summary,
-				Source:      source,
-				Author:      author,
-				Force:       force,
-				TemplateDir: templateDir,
+				ForgeUser:      forgeUser,
+				Name:           args[0],
+				License:        license,
+				Summary:        summary,
+				Source:         source,
+				Author:         author,
+				Force:          force,
+				TemplateDir:    src.Dir,
+				TemplateURL:    src.URL,
+				TemplateRef:    src.Ref,
+				TemplateCommit: src.Commit,
 			}
 
 			skipInterview, _ := cmd.Flags().GetBool("skip-interview")
@@ -131,226 +140,100 @@ func prompt(question string, defaultVal string) (string, error) {
 	return input, nil
 }
 
+// componentRunE builds the RunE shared by all component subcommands: resolve
+// the template source (flags, then the module's recorded template-url, then
+// config), scaffold in the current working directory, and clean up any
+// temporary template clone.
+func (a *App) componentRunE(newFn func(scaffold.ComponentOptions) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get working directory: %w", err)
+		}
+
+		src, err := a.resolveTemplateSource(cmd, cwd)
+		if err != nil {
+			return err
+		}
+		defer src.Cleanup()
+
+		opts := scaffold.ComponentOptions{
+			Name:        args[0],
+			TemplateDir: src.Dir,
+			WorkDir:     cwd,
+		}
+		return newFn(opts)
+	}
+}
+
 func (a *App) newClassCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "class <name>",
 		Short: "Create a new Puppet class",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			templateDir, _ := cmd.InheritedFlags().GetString("template-dir")
-
-			if templateDir == "" {
-				templateDir = a.Config.TemplateDir
-			}
-
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get working directory: %w", err)
-			}
-
-			opts := scaffold.ComponentOptions{
-				Name:        args[0],
-				TemplateDir: templateDir,
-				WorkDir:     cwd,
-			}
-			return scaffold.NewClass(opts)
-		},
+		RunE:  a.componentRunE(scaffold.NewClass),
 	}
-	return cmd
 }
 
 func (a *App) newDefinedTypeCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "defined_type <name>",
 		Short: "Create a new Puppet defined type",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			templateDir, _ := cmd.InheritedFlags().GetString("template-dir")
-
-			if templateDir == "" {
-				templateDir = a.Config.TemplateDir
-			}
-
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get working directory: %w", err)
-			}
-
-			opts := scaffold.ComponentOptions{
-				Name:        args[0],
-				TemplateDir: templateDir,
-				WorkDir:     cwd,
-			}
-			return scaffold.NewDefinedType(opts)
-		},
+		RunE:  a.componentRunE(scaffold.NewDefinedType),
 	}
-	return cmd
 }
 
 func (a *App) newFactCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "fact <name>",
 		Short: "Create a new Puppet fact",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			templateDir, _ := cmd.InheritedFlags().GetString("template-dir")
-
-			if templateDir == "" {
-				templateDir = a.Config.TemplateDir
-			}
-
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get working directory: %w", err)
-			}
-
-			opts := scaffold.ComponentOptions{
-				Name:        args[0],
-				TemplateDir: templateDir,
-				WorkDir:     cwd,
-			}
-			return scaffold.NewFact(opts)
-		},
+		RunE:  a.componentRunE(scaffold.NewFact),
 	}
-	return cmd
 }
 
 func (a *App) newFunctionCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "function <name>",
 		Short: "Create a new Puppet function",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			templateDir, _ := cmd.InheritedFlags().GetString("template-dir")
-
-			if templateDir == "" {
-				templateDir = a.Config.TemplateDir
-			}
-
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get working directory: %w", err)
-			}
-
-			opts := scaffold.ComponentOptions{
-				Name:        args[0],
-				TemplateDir: templateDir,
-				WorkDir:     cwd,
-			}
-			return scaffold.NewFunction(opts)
-		},
+		RunE:  a.componentRunE(scaffold.NewFunction),
 	}
-	return cmd
 }
 
 func (a *App) newTaskCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "task <name>",
 		Short: "Create a new Puppet task",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			templateDir, _ := cmd.InheritedFlags().GetString("template-dir")
-
-			if templateDir == "" {
-				templateDir = a.Config.TemplateDir
-			}
-
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get working directory: %w", err)
-			}
-
-			opts := scaffold.ComponentOptions{
-				Name:        args[0],
-				TemplateDir: templateDir,
-				WorkDir:     cwd,
-			}
-			return scaffold.NewTask(opts)
-		},
+		RunE:  a.componentRunE(scaffold.NewTask),
 	}
-	return cmd
 }
 
 func (a *App) newProviderCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "provider <name>",
 		Short: "Create a new Puppet provider",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			templateDir, _ := cmd.InheritedFlags().GetString("template-dir")
-
-			if templateDir == "" {
-				templateDir = a.Config.TemplateDir
-			}
-
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get working directory: %w", err)
-			}
-
-			opts := scaffold.ComponentOptions{
-				Name:        args[0],
-				TemplateDir: templateDir,
-				WorkDir:     cwd,
-			}
-			return scaffold.NewProvider(opts)
-		},
+		RunE:  a.componentRunE(scaffold.NewProvider),
 	}
-	return cmd
 }
 
 func (a *App) newTransportCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "transport <name>",
 		Short: "Create a new Puppet transport",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			templateDir, _ := cmd.InheritedFlags().GetString("template-dir")
-
-			if templateDir == "" {
-				templateDir = a.Config.TemplateDir
-			}
-
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get working directory: %w", err)
-			}
-
-			opts := scaffold.ComponentOptions{
-				Name:        args[0],
-				TemplateDir: templateDir,
-				WorkDir:     cwd,
-			}
-			return scaffold.NewTransport(opts)
-		},
+		RunE:  a.componentRunE(scaffold.NewTransport),
 	}
-	return cmd
 }
 
 func (a *App) newTestCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "test <n>",
 		Short: "Create a new unit test for an existing class or defined type",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			templateDir, _ := cmd.InheritedFlags().GetString("template-dir")
-
-			if templateDir == "" {
-				templateDir = a.Config.TemplateDir
-			}
-
-			cwd, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get working directory: %w", err)
-			}
-
-			opts := scaffold.ComponentOptions{
-				Name:        args[0],
-				TemplateDir: templateDir,
-				WorkDir:     cwd,
-			}
-			return scaffold.NewTest(opts)
-		},
+		RunE:  a.componentRunE(scaffold.NewTest),
 	}
-	return cmd
 }

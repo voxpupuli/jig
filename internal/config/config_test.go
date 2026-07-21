@@ -76,6 +76,43 @@ image  = "localhost/voxbox:dev"
 	}
 }
 
+// ssh_accept_new must default to false (always ask about unknown host keys)
+// and be settable from the config file or the JIG_SSH_ACCEPT_NEW env var.
+// It lives in per-user config only -- never metadata.json -- because it is a
+// trust decision.
+func TestLoad_SSHAcceptNew(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist.toml")
+	cfg, err := Load(missing, quietLogger())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SSHAcceptNew {
+		t.Error("ssh_accept_new must default to false")
+	}
+
+	path := writeConfig(t, "ssh_accept_new = true\n")
+	cfg, err = Load(path, quietLogger())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.SSHAcceptNew {
+		t.Error("ssh_accept_new from the config file was not applied")
+	}
+}
+
+func TestLoad_SSHAcceptNewEnvOverride(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "absent.toml")
+	t.Setenv("JIG_SSH_ACCEPT_NEW", "true")
+
+	cfg, err := Load(path, quietLogger())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.SSHAcceptNew {
+		t.Error("JIG_SSH_ACCEPT_NEW env override was not applied")
+	}
+}
+
 // An environment variable must override the config file for nested runner keys
 // (JIG_RUNNER_TYPE -> runner.type). This is the override path ananace's users
 // rely on without a CLI flag.

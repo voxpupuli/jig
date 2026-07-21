@@ -32,6 +32,7 @@ planned functionality.
 | `new`              | `transport`    | ✅ Working  |
 | `--skip-interview` |                | ✅ Working  |
 | Template override  |                | ✅ Working  |
+| Remote templates   |                | ✅ Working  |
 | `templates`        | `dump`         | ✅ Working  |
 | `templates`        | `resolve`      | 🔲 Planned |
 | `build`            |                | ✅ Working  |
@@ -205,11 +206,14 @@ required by Ruby class naming conventions. Five files are generated:
 
 **Flags on `jig new`:**
 
-The following flag is available on all `jig new` subcommands:
+The following flags are available on all `jig new` subcommands:
 
 | Flag | Description |
 |------|-------------|
 | `-t, --template-dir` | Path to a custom template directory. See [Template Overrides](#template-overrides) below. |
+| `--template-url` | Git URL of a template repository to clone and use. See [Remote template repositories](#remote-template-repositories) below. |
+| `--template-ref` | Branch, tag, or ref to use with `--template-url`. Defaults to the remote's default branch. |
+| `--ssh-accept-new` | Automatically trust unknown ssh host keys (like OpenSSH's `StrictHostKeyChecking=accept-new`). A changed key still fails. |
 
 **Global flags:**
 
@@ -463,6 +467,56 @@ jig new module mymodule
 template_dir = "/path/to/templates"
 ```
 
+### Remote template repositories
+
+Instead of a directory on disk, jig can fetch templates straight from a git
+repository. This is the natural fit for teams: everyone shares one template
+repo instead of keeping a checkout at the same local path.
+
+```bash
+jig new module --template-url 'ssh://git@my.git.server/jig_templates.git' --template-ref my_branch mymodule
+```
+
+jig makes a shallow clone into a temporary directory, uses it exactly like a
+`--template-dir` (including per-file fallback to the embedded templates), and
+deletes the clone afterwards. The repository layout is the same as a template
+override directory.
+
+The module's `metadata.json` records where the templates came from:
+
+```json
+{
+  "template-url": "ssh://git@my.git.server/jig_templates.git",
+  "template-ref": "my_branch",
+  "template-commit": "<commit the templates were fetched at>"
+}
+```
+
+Later `jig new` invocations inside the module (for example `jig new class`)
+use the recorded `template-url` and `template-ref` automatically, so the whole
+team scaffolds from the same, current templates with no flags at all. An
+explicit `--template-dir` or `--template-url` flag overrides the recorded
+values.
+
+**Supported transports and authentication:**
+
+- **ssh** — authenticated through your running ssh-agent (`SSH_AUTH_SOCK`).
+  Keys with passphrases work as long as they are loaded in the agent.
+- **http(s)** — anonymous access only; private repositories over https are
+  not supported yet (use ssh for those).
+
+**Host key verification:** ssh server keys are checked against
+`~/.ssh/known_hosts` (created if missing, `$SSH_KNOWN_HOSTS` overrides the
+path). On first contact with an unknown host, jig shows the key fingerprint
+and asks before continuing, like OpenSSH does. In non-interactive contexts
+(CI), pass `--ssh-accept-new`, set `ssh_accept_new = true` in the config, or
+export `JIG_SSH_ACCEPT_NEW=true` to accept unknown hosts automatically — the
+fingerprint is still printed for the log. A host key that *differs* from the
+recorded one always fails, with no override; if a server legitimately rotated
+its key, remove the stale entry (`ssh-keygen -R <host>`) and connect again.
+Because it is a per-user trust decision, `ssh_accept_new` is read only from
+the config, environment, or flag — never from `metadata.json`.
+
 ## Configuration
 
 jig looks for a config file at `~/.config/jig/config.toml`. All fields are
@@ -473,6 +527,10 @@ author         = "John Doe"
 license        = "Apache-2.0"
 forge_token    = "your-forge-token"
 template_dir   = "/path/to/templates"
+
+# Automatically trust unknown ssh host keys when fetching remote templates
+# (changed keys always fail). See "Remote template repositories" above.
+ssh_accept_new = false
 
 # Optionally run bundle-backed commands through a container instead of the
 # host's bundler. See "Running through voxbox" above.

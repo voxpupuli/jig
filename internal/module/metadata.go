@@ -22,6 +22,15 @@ type Metadata struct {
 	OperatingSystem []OperatingSystem `json:"operatingsystem_support"`
 	Tags            []string          `json:"tags"`
 	PdkVersion      string            `json:"pdk-version"`
+	// TemplateURL, TemplateRef, and TemplateCommit record which template
+	// repository the module was scaffolded from, so later jig invocations
+	// in the module can default to the same source. Trust-related settings
+	// (like ssh-accept-new) deliberately never live here: metadata.json is
+	// shared via the module repository and must not be able to change
+	// security decisions for other users.
+	TemplateURL    string `json:"template-url,omitempty"`
+	TemplateRef    string `json:"template-ref,omitempty"`
+	TemplateCommit string `json:"template-commit,omitempty"`
 }
 
 type Dependency struct {

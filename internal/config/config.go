@@ -24,6 +24,7 @@ type Config struct {
 	License       string       `mapstructure:"license"`
 	ForgeToken    string       `mapstructure:"forge_token"`
 	TemplateDir   string       `mapstructure:"template_dir"`
+	SSHAcceptNew  bool         `mapstructure:"ssh_accept_new"`
 	Runner        RunnerConfig `mapstructure:"runner"`
 }
 
@@ -58,6 +59,7 @@ func Load(path string, logger *logrus.Logger) (Config, error) {
 
 	// Defaults double as key registration so AutomaticEnv overrides are picked
 	// up by Unmarshal even when the keys are absent from the config file.
+	v.SetDefault("ssh_accept_new", false)
 	v.SetDefault("runner.type", DefaultRunnerType)
 	v.SetDefault("runner.engine", DefaultRunnerEngine)
 	v.SetDefault("runner.image", DefaultRunnerImage)
