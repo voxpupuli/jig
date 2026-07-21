@@ -42,7 +42,7 @@ func Execute() error {
 	rootCmd.AddCommand(app.templatesCmd())
 	rootCmd.AddCommand(app.buildCmd())
 	rootCmd.AddCommand(app.releaseCmd())
-	rootCmd.AddCommand(app.updateCmd())
+	rootCmd.AddCommand(app.msyncCmd())
 	rootCmd.AddCommand(app.validateCmd())
 	rootCmd.AddCommand(app.testCmd())
 	rootCmd.AddCommand(app.convertCmd())
