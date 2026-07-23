@@ -20,8 +20,9 @@ func Execute() error {
 	}
 
 	rootCmd := &cobra.Command{
-		Use:   "jig",
-		Short: "A tool for building and publishing Puppet modules",
+		Use:     "jig",
+		Short:   "A tool for building and publishing Puppet modules",
+		Version: Version(),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			configPath, _ := cmd.Flags().GetString("config")
 
@@ -47,6 +48,7 @@ func Execute() error {
 	rootCmd.AddCommand(app.validateCmd())
 	rootCmd.AddCommand(app.testCmd())
 	rootCmd.AddCommand(app.convertCmd())
+	rootCmd.AddCommand(app.versionCmd())
 
 	return rootCmd.Execute()
 }
