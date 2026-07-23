@@ -54,7 +54,7 @@ jobs:
           GOOS: linux
           GOARCH: amd64
         run: |
-          go build -trimpath -ldflags="-s -w" -o jig
+          go build -trimpath -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" -o jig
           tar -czf jig_${VERSION}_linux_amd64.tar.gz jig LICENSE
           rm jig
 
@@ -63,7 +63,7 @@ jobs:
           GOOS: linux
           GOARCH: arm64
         run: |
-          go build -trimpath -ldflags="-s -w" -o jig
+          go build -trimpath -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" -o jig
           tar -czf jig_${VERSION}_linux_arm64.tar.gz jig LICENSE
           rm jig
 
@@ -72,7 +72,7 @@ jobs:
           GOOS: darwin
           GOARCH: amd64
         run: |
-          go build -trimpath -ldflags="-s -w" -o jig
+          go build -trimpath -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" -o jig
           tar -czf jig_${VERSION}_darwin_amd64.tar.gz jig LICENSE
           rm jig
 
@@ -81,7 +81,7 @@ jobs:
           GOOS: darwin
           GOARCH: arm64
         run: |
-          go build -trimpath -ldflags="-s -w" -o jig
+          go build -trimpath -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" -o jig
           tar -czf jig_${VERSION}_darwin_arm64.tar.gz jig LICENSE
           rm jig
 
@@ -90,7 +90,7 @@ jobs:
           GOOS: windows
           GOARCH: amd64
         run: |
-          go build -trimpath -ldflags="-s -w" -o jig.exe
+          go build -trimpath -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" -o jig.exe
           zip jig_${VERSION}_windows_amd64.zip jig.exe LICENSE
           rm jig.exe
 
@@ -170,3 +170,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}

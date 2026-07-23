@@ -14,8 +14,13 @@ COPY . .
 # TARGETOS/TARGETARCH are provided by buildx for multi-arch builds.
 ARG TARGETOS
 ARG TARGETARCH
+# VERSION is stamped into the binary for `jig version`; release builds pass
+# the bare tag version (e.g. 2.0.0).
+ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -trimpath -ldflags="-s -w" -o /jig
+    go build -trimpath \
+    -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" \
+    -o /jig
 
 # Runtime stage: minimal alpine with CA certificates for HTTPS git remotes.
 FROM alpine:latest
