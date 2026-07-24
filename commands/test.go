@@ -16,12 +16,26 @@ func (a *App) testCmd() *cobra.Command {
 }
 
 func (a *App) testUnitCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:                "unit",
-		Short:              "Run unit tests via rake spec through bundle",
-		DisableFlagParsing: true,
+	var parallel bool
+
+	cmd := &cobra.Command{
+		Use:   "unit",
+		Short: "Run unit tests via rake spec through bundle",
+		Long: `Run the module's unit tests.
+
+By default this runs serially (rake spec). Pass --parallel to run via
+rake parallel_spec instead. Arguments after -- are forwarded to the
+rake invocation.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runRake(append([]string{"spec"}, args...))
+			task := "spec"
+			if parallel {
+				task = "parallel_spec"
+			}
+			return a.runRake(append([]string{task}, args...))
 		},
 	}
+
+	cmd.Flags().BoolVar(&parallel, "parallel", false, "run tests in parallel (rake parallel_spec)")
+
+	return cmd
 }

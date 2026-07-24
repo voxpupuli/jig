@@ -45,6 +45,9 @@ docker run --rm -i -v "$PWD:/repo:Z" -w /repo \
   ghcr.io/voxpupuli/voxbox:latest spec
 ```
 
+`jig test unit --parallel` is the same, but with `parallel_spec` in
+place of `spec`.
+
 `jig msync` uses `msync`, which is not a rake task, so it overrides the
 entrypoint to run bundle directly:
 

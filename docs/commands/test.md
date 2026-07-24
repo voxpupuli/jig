@@ -8,8 +8,9 @@ module's bundled gems to be installed — or a container runner (see
 [Running through voxbox](../voxbox.md)).
 
 ```
-jig test unit [args...]
+jig test unit [--parallel] [args...]
 ```
 
-Any additional arguments are passed through verbatim to the underlying
-rake invocation.
+Pass `--parallel` to run via `rake parallel_spec` instead of `rake
+spec`. Arguments after `--` are passed through verbatim to the
+underlying rake invocation.
