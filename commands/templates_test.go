@@ -108,6 +108,81 @@ func TestTemplatesResolve_NotFound(t *testing.T) {
 	}
 }
 
+// runTemplatesDump executes `jig templates dump <destination>` and returns
+// the command output.
+func runTemplatesDump(t *testing.T, a *App, destination string) (string, error) {
+	t.Helper()
+	cmd := a.templatesCmd()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"dump", destination})
+	err := cmd.Execute()
+	return buf.String(), err
+}
+
+// Dumping to "." must write into the current directory in place rather than
+// trying to rename it out of the way: renaming "." fails on every platform,
+// and dumping is expected to behave like unpacking an archive alongside
+// existing files. See https://github.com/voxpupuli/jig/issues/82.
+func TestTemplatesDump_CurrentDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile(filepath.Join(dir, "another-file"), []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := testApp(config.Config{})
+	if _, err := runTemplatesDump(t, a, "."); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "another-file")); err != nil {
+		t.Errorf("expected pre-existing file to survive the dump: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "class", "class.pp.tmpl")); err != nil {
+		t.Errorf("expected templates to be written into the current directory: %v", err)
+	}
+
+	entries, err := os.ReadDir(filepath.Dir(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Name(), ".bak.") {
+			t.Errorf("expected no backup directory to be created, found %q", e.Name())
+		}
+	}
+}
+
+// Dumping to a non-cwd destination that already exists must still back it up
+// with a timestamp suffix before writing.
+func TestTemplatesDump_BacksUpExistingDestination(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.Mkdir("existing", 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	a := testApp(config.Config{})
+	if _, err := runTemplatesDump(t, a, "existing"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawBackup bool
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "existing.bak.") {
+			sawBackup = true
+		}
+	}
+	if !sawBackup {
+		t.Error("expected a backup directory to be created")
+	}
+}
+
 // Inside a module directory, the [template] section of jig.toml must feed
 // resolution, matching what component commands do.
 func TestTemplatesResolve_ModuleConfigURL(t *testing.T) {

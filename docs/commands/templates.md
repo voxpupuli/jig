@@ -9,7 +9,9 @@ remote template repositories work.
 Extracts all embedded default templates to a directory on disk. This is
 useful as a starting point for creating your own custom templates. If the
 destination directory already exists it will be renamed with a timestamp
-suffix before writing.
+suffix before writing, unless the destination is the current directory (e.g.
+`.`), in which case templates are written into it in place alongside any
+existing files.
 
 ```
 jig templates dump <destination>
