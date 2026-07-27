@@ -92,8 +92,7 @@ func TestReadMetadata(t *testing.T) {
 			"dependencies": [],
 			"requirements": [],
 			"operatingsystem_support": [],
-			"tags": [],
-			"pdk-version": "3.4.0"
+			"tags": []
 		}`
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			t.Fatal(err)

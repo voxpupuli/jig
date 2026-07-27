@@ -51,7 +51,6 @@ func makeModuleDir(t *testing.T, forgeUser, moduleName string) string {
 		"requirements":            []any{},
 		"operatingsystem_support": []any{},
 		"tags":                    []any{},
-		"pdk-version":             "3.4.0",
 	}
 	data, err := json.Marshal(meta)
 	if err != nil {

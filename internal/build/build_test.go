@@ -70,7 +70,6 @@ func writeTestMetadata(t *testing.T, dir, forgeUser, moduleName, version string)
 		"requirements":            []any{},
 		"operatingsystem_support": []any{},
 		"tags":                    []any{},
-		"pdk-version":             "3.4.0",
 	}
 	metaData, err := json.Marshal(meta)
 	if err != nil {
@@ -317,7 +316,6 @@ func TestDoBuild_InvalidMetadata(t *testing.T) {
 		"requirements":            []any{},
 		"operatingsystem_support": []any{},
 		"tags":                    []any{},
-		"pdk-version":             "3.4.0",
 	}
 	metaData, err := json.Marshal(meta)
 	if err != nil {

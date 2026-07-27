@@ -21,7 +21,6 @@ type Metadata struct {
 	Requirements    []Requirement     `json:"requirements"`
 	OperatingSystem []OperatingSystem `json:"operatingsystem_support"`
 	Tags            []string          `json:"tags"`
-	PdkVersion      string            `json:"pdk-version"`
 	// TemplateURL, TemplateRef, and TemplateCommit were written by jig 1.x
 	// to record which template repository the module was scaffolded from.
 	// jig 2.x records template provenance in jig.toml instead and does not
@@ -69,7 +68,6 @@ func NewMetadata(name string, forgeUser string, author string) Metadata {
 		},
 		OperatingSystem: []OperatingSystem{},
 		Tags:            []string{},
-		PdkVersion:      "3.4.0",
 	}
 }
 
