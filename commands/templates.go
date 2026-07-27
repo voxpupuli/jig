@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/voxpupuli/jig/internal/scaffold"
@@ -99,6 +100,26 @@ func explainTemplate(w io.Writer, src *templateSource, name string) error {
 	return nil
 }
 
+// isCwd reports whether destination resolves to the current working
+// directory. Backing up the destination is skipped in that case: renaming
+// the current directory out from under the process is unreliable across
+// platforms (fails outright when destination is "."), so templates are
+// written directly into the existing directory instead, overwriting only
+// the files jig manages.
+func isCwd(destination string) (bool, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return false, fmt.Errorf("failed to determine current directory: %w", err)
+	}
+
+	abs, err := filepath.Abs(destination)
+	if err != nil {
+		return false, fmt.Errorf("failed to resolve destination %s: %w", destination, err)
+	}
+
+	return abs == cwd, nil
+}
+
 func (a *App) templatesDumpCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dump <destination>",
@@ -106,11 +127,17 @@ func (a *App) templatesDumpCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			destination := args[0]
-			if _, err := os.Stat(destination); err == nil {
-				if err := scaffold.BackupDir(destination); err != nil {
-					return fmt.Errorf("failed to back up existing directory: %w", err)
+			destinationIsCwd, err := isCwd(destination)
+			if err != nil {
+				return err
+			}
+			if !destinationIsCwd {
+				if _, err := os.Stat(destination); err == nil {
+					if err := scaffold.BackupDir(destination); err != nil {
+						return fmt.Errorf("failed to back up existing directory: %w", err)
+					}
+					fmt.Printf("backed up existing directory %s\n", destination)
 				}
-				fmt.Printf("backed up existing directory %s\n", destination)
 			}
 			return template.DumpTemplates(destination)
 		},
