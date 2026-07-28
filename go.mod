@@ -1,4 +1,4 @@
-module github.com/voxpupuli/jig
+module github.com/voxpupuli/jig/v2
 
 go 1.25.5
 

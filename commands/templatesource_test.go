@@ -13,8 +13,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/voxpupuli/jig/internal/config"
-	"github.com/voxpupuli/jig/internal/module"
+	"github.com/voxpupuli/jig/v2/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/module"
 )
 
 func testApp(cfg config.Config) *App {

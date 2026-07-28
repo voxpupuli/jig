@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/voxpupuli/jig/internal/forge"
-	"github.com/voxpupuli/jig/internal/release"
+	"github.com/voxpupuli/jig/v2/internal/forge"
+	"github.com/voxpupuli/jig/v2/internal/release"
 )
 
 func (a *App) releaseCmd() *cobra.Command {

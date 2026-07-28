@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/voxpupuli/jig/internal/build"
-	"github.com/voxpupuli/jig/internal/forge"
-	"github.com/voxpupuli/jig/internal/module"
-	"github.com/voxpupuli/jig/internal/scaffold"
+	"github.com/voxpupuli/jig/v2/internal/build"
+	"github.com/voxpupuli/jig/v2/internal/forge"
+	"github.com/voxpupuli/jig/v2/internal/module"
+	"github.com/voxpupuli/jig/v2/internal/scaffold"
 )
 
 // Options controls the behaviour of DoRelease.

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/voxpupuli/jig/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/config"
 )
 
 // runTemplatesResolve executes `jig templates resolve <name>` with the given

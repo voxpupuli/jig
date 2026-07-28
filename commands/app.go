@@ -3,8 +3,8 @@ package commands
 
 import (
 	"github.com/sirupsen/logrus"
-	"github.com/voxpupuli/jig/internal/bundle"
-	"github.com/voxpupuli/jig/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/bundle"
+	"github.com/voxpupuli/jig/v2/internal/config"
 )
 
 type App struct {

@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/voxpupuli/jig/internal/config"
-	"github.com/voxpupuli/jig/internal/module"
-	"github.com/voxpupuli/jig/internal/remote"
+	"github.com/voxpupuli/jig/v2/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/module"
+	"github.com/voxpupuli/jig/v2/internal/remote"
 )
 
 // templateSource is a resolved template location: a local directory (possibly

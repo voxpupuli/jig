@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/voxpupuli/jig/internal/config"
-	"github.com/voxpupuli/jig/internal/module"
+	"github.com/voxpupuli/jig/v2/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/module"
 )
 
 func NewModule(opts Options) error {

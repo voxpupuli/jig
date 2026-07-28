@@ -10,7 +10,7 @@ import (
 
 	gogitignore "github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/sergi/go-diff/diffmatchpatch"
-	"github.com/voxpupuli/jig/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/config"
 )
 
 // RenewOptions controls Renew. Paths is the [renew] allowlist from jig.toml:

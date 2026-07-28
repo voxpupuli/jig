@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/voxpupuli/jig/internal/config"
-	"github.com/voxpupuli/jig/internal/module"
-	"github.com/voxpupuli/jig/internal/scaffold"
+	"github.com/voxpupuli/jig/v2/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/module"
+	"github.com/voxpupuli/jig/v2/internal/scaffold"
 )
 
 func DoBuild(dir string) error {
