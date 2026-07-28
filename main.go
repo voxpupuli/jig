@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/voxpupuli/jig/commands"
+	"github.com/voxpupuli/jig/v2/commands"
 )
 
 func main() {

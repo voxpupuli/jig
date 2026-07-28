@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/voxpupuli/jig/internal/build"
+	"github.com/voxpupuli/jig/v2/internal/build"
 )
 
 func (a *App) buildCmd() *cobra.Command {

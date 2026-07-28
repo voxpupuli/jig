@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	gogitignore "github.com/go-git/go-git/v5/plumbing/format/gitignore"
-	"github.com/voxpupuli/jig/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/config"
 )
 
 // specAllowlist is the set of files permitted in a published module per the

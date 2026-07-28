@@ -10,8 +10,8 @@ import (
 
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/voxpupuli/jig/internal/config"
-	"github.com/voxpupuli/jig/internal/module"
+	"github.com/voxpupuli/jig/v2/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/module"
 )
 
 // moduleTemplateRepo builds a local git repository holding a module template

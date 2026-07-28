@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/voxpupuli/jig/internal/scaffold"
+	"github.com/voxpupuli/jig/v2/internal/scaffold"
 )
 
 func (a *App) newCmd() *cobra.Command {

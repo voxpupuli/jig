@@ -6,7 +6,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"github.com/voxpupuli/jig/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/config"
 )
 
 func Execute() error {

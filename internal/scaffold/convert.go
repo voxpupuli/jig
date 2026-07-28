@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/voxpupuli/jig/internal/template"
+	"github.com/voxpupuli/jig/v2/internal/template"
 )
 
 func ConvertModule(targetDir string) error {

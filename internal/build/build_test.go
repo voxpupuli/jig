@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/voxpupuli/jig/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/config"
 )
 
 // makeBuildDir creates a minimal but realistic module directory suitable for
