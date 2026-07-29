@@ -38,93 +38,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
 
-      # Strip the leading "v" from the tag so archive names use bare version
-      # numbers (e.g. jig_0.1.0_linux_amd64.tar.gz).
-      - name: Set version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
-      - name: Build linux/amd64
-        env:
-          GOOS: linux
-          GOARCH: amd64
-        run: |
-          go build -trimpath -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" -o jig
-          tar -czf jig_${VERSION}_linux_amd64.tar.gz jig LICENSE
-          rm jig
-
-      - name: Build linux/arm64
-        env:
-          GOOS: linux
-          GOARCH: arm64
-        run: |
-          go build -trimpath -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" -o jig
-          tar -czf jig_${VERSION}_linux_arm64.tar.gz jig LICENSE
-          rm jig
-
-      - name: Build darwin/amd64
-        env:
-          GOOS: darwin
-          GOARCH: amd64
-        run: |
-          go build -trimpath -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" -o jig
-          tar -czf jig_${VERSION}_darwin_amd64.tar.gz jig LICENSE
-          rm jig
-
-      - name: Build darwin/arm64
-        env:
-          GOOS: darwin
-          GOARCH: arm64
-        run: |
-          go build -trimpath -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" -o jig
-          tar -czf jig_${VERSION}_darwin_arm64.tar.gz jig LICENSE
-          rm jig
-
-      - name: Build windows/amd64
-        env:
-          GOOS: windows
-          GOARCH: amd64
-        run: |
-          go build -trimpath -ldflags="-s -w -X github.com/voxpupuli/jig/commands.version=${VERSION}" -o jig.exe
-          zip jig_${VERSION}_windows_amd64.zip jig.exe LICENSE
-          rm jig.exe
-
-      - name: Generate checksums
-        run: |
-          sha256sum \
-            jig_${VERSION}_linux_amd64.tar.gz \
-            jig_${VERSION}_linux_arm64.tar.gz \
-            jig_${VERSION}_darwin_amd64.tar.gz \
-            jig_${VERSION}_darwin_arm64.tar.gz \
-            jig_${VERSION}_windows_amd64.zip \
-            > sha256sums.txt
-
-      # Immutable releases seal a release at publish time, so all assets must
-      # be uploaded while it is still a draft. Create the draft and upload the
-      # artifacts here, then publish it in the next step.
-      - name: Create draft release with artifacts
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+      - name: Run goreleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
-          draft: true
-          files: |
-            jig_${{ env.VERSION }}_linux_amd64.tar.gz
-            jig_${{ env.VERSION }}_linux_arm64.tar.gz
-            jig_${{ env.VERSION }}_darwin_amd64.tar.gz
-            jig_${{ env.VERSION }}_darwin_arm64.tar.gz
-            jig_${{ env.VERSION }}_windows_amd64.zip
-            sha256sums.txt
-
-      # Publishing the draft seals it (immutable releases) with the assets
-      # already attached.
-      - name: Publish release
+          args: release --clean
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --repo "${GITHUB_REPOSITORY}"
+          GITHUB_TOKEN: ${{ github.token }}
 
   docker:
     name: Docker image
