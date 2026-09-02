@@ -94,6 +94,9 @@ does not require an allowlist.`,
 					if opts.Source == "" {
 						opts.Source = mf.Source
 					}
+					if opts.ProjectPage == "" {
+						opts.ProjectPage = mf.ProjectPage
+					}
 					opts.Version = mf.Version
 					opts.Dependencies = mf.Dependencies
 				}

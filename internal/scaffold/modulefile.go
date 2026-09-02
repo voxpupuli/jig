@@ -55,7 +55,7 @@ func ParseModulefile(path string) (ModulefileData, error) {
 	}
 
 	var data ModulefileData
-	for _, line := range strings.Split(string(content), "\n") {
+	for _, line := range joinContinuations(strings.Split(string(content), "\n")) {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
@@ -90,7 +90,7 @@ func ParseModulefile(path string) (ModulefileData, error) {
 		case "project_page":
 			data.ProjectPage = values[0]
 		case "dependency":
-			dep := module.Dependency{Name: values[0]}
+			dep := module.Dependency{Name: normalizeDependencyName(values[0])}
 			if len(values) > 1 {
 				dep.VersionRequirement = values[1]
 			}
@@ -101,14 +101,56 @@ func ParseModulefile(path string) (ModulefileData, error) {
 	return data, nil
 }
 
-// SplitForgeName splits a Forge-convention "forgeuser-modulename" string
-// (used both by metadata.json's name field and by module directory names)
-// into its two parts. A string with no "-" is returned as the module name
-// with an empty forge user.
-func SplitForgeName(raw string) (forgeUser string, name string) {
-	parts := strings.SplitN(raw, "-", 2)
-	if len(parts) == 2 {
-		return parts[0], parts[1]
+// joinContinuations merges a Ruby-style multi-line call, such as
+//
+//	dependency 'puppetlabs/stdlib',
+//	           '>= 4.0.0'
+//
+// into a single logical line, so the line-based parser above sees it as one
+// statement. A trailing comma is the continuation signal; lines are joined
+// with a space until one is found that doesn't end with one.
+func joinContinuations(lines []string) []string {
+	var result []string
+	pending := ""
+	for _, raw := range lines {
+		line := strings.TrimRight(raw, " \t\r")
+		if pending != "" {
+			pending += " " + strings.TrimSpace(line)
+		} else {
+			pending = line
+		}
+		if strings.HasSuffix(strings.TrimSpace(pending), ",") {
+			continue
+		}
+		result = append(result, pending)
+		pending = ""
 	}
-	return "", raw
+	if pending != "" {
+		result = append(result, pending)
+	}
+	return result
+}
+
+// normalizeDependencyName rewrites the legacy "forgeuser/modulename" form
+// Modulefile accepted to the "forgeuser-modulename" form current tooling
+// (and linters) expect. Anything else -- no slash, or more than one -- is
+// left alone.
+func normalizeDependencyName(name string) string {
+	if strings.Count(name, "/") != 1 {
+		return name
+	}
+	return strings.Replace(name, "/", "-", 1)
+}
+
+// SplitForgeName splits a Forge-convention "forgeuser-modulename" or
+// "forgeuser/modulename" string (both accepted by Puppet's own Modulefile
+// and metadata.json name validation) into its two parts. A string with
+// neither separator is returned as the module name with an empty forge
+// user.
+func SplitForgeName(raw string) (forgeUser string, name string) {
+	idx := strings.IndexAny(raw, "-/")
+	if idx == -1 {
+		return "", raw
+	}
+	return raw[:idx], raw[idx+1:]
 }

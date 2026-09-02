@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,8 +140,8 @@ dependency 'puppetlabs/stdlib', '>= 3.2.0 < 5.0.0'
 	if meta.Author != "Binford Tools" {
 		t.Errorf("expected author %q, got %q", "Binford Tools", meta.Author)
 	}
-	if len(meta.Dependencies) != 1 || meta.Dependencies[0].Name != "puppetlabs/stdlib" {
-		t.Errorf("expected one dependency on puppetlabs/stdlib, got %+v", meta.Dependencies)
+	if len(meta.Dependencies) != 1 || meta.Dependencies[0].Name != "puppetlabs-stdlib" {
+		t.Errorf("expected one dependency on puppetlabs-stdlib, got %+v", meta.Dependencies)
 	}
 
 	if _, err := os.Stat(filepath.Join(moduleDir, "Modulefile")); err != nil {
@@ -204,6 +205,49 @@ func TestConvertModule_RepairsPartialMetadata(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Error("running convert twice should be a no-op on metadata.json")
+	}
+}
+
+// Fields jig doesn't model (a PDK-era pdk-version, say) must survive repair
+// untouched, not be silently dropped when the file is rewritten.
+func TestConvertModule_RepairPreservesUnknownKeys(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	original := `{
+  "name": "test-module",
+  "author": "a",
+  "license": "l",
+  "summary": "s",
+  "source": "https://example.com",
+  "pdk-version": "3.0.0",
+  "data_provider": "function"
+}`
+	if err := os.WriteFile(metadataPath, []byte(original), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+
+	repaired, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to read repaired metadata.json: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(repaired, &raw); err != nil {
+		t.Fatalf("repaired metadata.json is not valid JSON: %v", err)
+	}
+
+	if v, ok := raw["pdk-version"]; !ok || strings.Trim(string(v), `"`) != "3.0.0" {
+		t.Errorf("expected pdk-version to survive repair, got %v (present: %v)", v, ok)
+	}
+	if v, ok := raw["data_provider"]; !ok || strings.Trim(string(v), `"`) != "function" {
+		t.Errorf("expected data_provider to survive repair, got %v (present: %v)", v, ok)
+	}
+	if _, ok := raw["version"]; !ok {
+		t.Error("expected version to have been defaulted in")
 	}
 }
 

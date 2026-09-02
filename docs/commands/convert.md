@@ -13,16 +13,22 @@ depends on what's there:
 
 - **Missing.** jig creates it. If a `Modulefile` (the Puppet 3.x-era module
   metadata format) is present, its `name`, `version`, `author`, `license`,
-  `summary`/`description`, `source`, and `dependency` lines pre-fill the new
-  `metadata.json`, and the `Modulefile` is left in place with a warning that
-  it's no longer used. Otherwise, jig runs the same interview `jig new
-  module` runs (honoring `--skip-interview` and the `-u/-a/-l/-s/-S` flags
-  below), and the module name is derived from the current directory's name
-  using the Forge convention (`puppet-nftables` and `binford2k-demo` both
-  give `nftables`/`demo`; a directory with no `-` is used as-is). A flag
+  `summary`/`description`, `source`, `project_page`, and `dependency` lines
+  pre-fill the new `metadata.json` (`name`/`dependency` accept both the
+  `user-mod` and legacy `user/mod` forms Puppet's own Modulefile did, and a
+  dependency name is normalized to the current `user-mod` convention), and
+  the `Modulefile` is left in place with a warning that it's no longer used.
+  Otherwise, jig runs the same interview `jig new module` runs (honoring
+  `--skip-interview` and the `-u/-a/-l/-s/-S` flags below), and the module
+  name is derived from the current directory's name using the Forge
+  convention (`puppet-nftables` and `binford2k-demo` both give
+  `nftables`/`demo`; a directory with no separator is used as-is). A flag
   always wins over the `Modulefile`, which always wins over your
   [config file](../configuration.md) defaults. `jig.toml` is written too, if
-  it's also missing.
+  it's also missing. jig then validates the metadata it just wrote and warns
+  about anything still missing (a `Modulefile` rarely carries a Forge
+  `source` URL, for instance) rather than leaving that for the next `jig
+  build` to discover.
 - **Present but not valid JSON.** jig reports the parse error and stops. It
   won't guess at a broken file, and it leaves `Gemfile`, `Rakefile`, and
   `spec/spec_helper.rb` untouched.
@@ -31,7 +37,9 @@ depends on what's there:
   `requirements`, `operatingsystem_support`, and `tags` lists — and warns
   about anything else validation flags (like a missing `author` or
   `license`), without a safe default to fall back on. It never overwrites a
-  value that's already present, so running `convert` twice is a no-op.
+  value that's already present, so running `convert` twice is a no-op. Keys
+  jig doesn't otherwise recognize (a PDK-era `pdk-version` or
+  `data_provider`, say) are preserved as-is rather than dropped.
 - **Present and valid.** Unchanged: jig doesn't touch it.
 
 In every case except a broken `metadata.json`, jig then renders the embedded

@@ -2,6 +2,7 @@
 package scaffold
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,7 @@ type ConvertOptions struct {
 	License      string
 	Summary      string
 	Source       string
+	ProjectPage  string
 	Version      string
 	Dependencies []module.Dependency
 
@@ -111,12 +113,18 @@ func createMetadata(opts ConvertOptions, metadataPath string, out io.Writer) err
 	}
 	meta.Summary = opts.Summary
 	meta.Source = opts.Source
+	meta.ProjectPage = opts.ProjectPage
 	if opts.Version != "" {
 		meta.Version = opts.Version
 	}
 	if len(opts.Dependencies) > 0 {
 		meta.Dependencies = opts.Dependencies
 	}
+
+	// A freshly created metadata.json can still fail validation -- a missing
+	// -S/--source, or a Modulefile with a non-semver version -- so warn about
+	// it now rather than leaving that for the next `jig build` to discover.
+	printValidationWarnings(out, meta.Validate())
 
 	if opts.DryRun {
 		fmt.Fprintf(out, "would create %s\n", metadataPath)
@@ -146,44 +154,71 @@ func createMetadata(opts ConvertOptions, metadataPath string, out io.Writer) err
 	return nil
 }
 
+// printValidationWarnings reports every module.ValidationResult at its own
+// severity (Severity implements Stringer), rather than flattening
+// info/warning/error together under one label.
+func printValidationWarnings(out io.Writer, results []module.ValidationResult) {
+	for _, r := range results {
+		fmt.Fprintf(out, "%s: %s - %s\n", r.Level, r.Field, r.Message)
+	}
+}
+
 // repairMetadata reads an existing metadata.json. A JSON parse error is
 // fatal -- jig won't guess at a broken file. Otherwise it fills in the keys
 // that have a safe default (version, and the dependencies/requirements/
 // operatingsystem_support/tags lists) when they're missing, warns about
 // validation failures it can't fix on its own, and writes the file back only
 // if something actually changed, so running convert twice is a no-op.
+//
+// Repair round-trips through a map[string]json.RawMessage rather than the
+// Metadata struct, so keys jig doesn't model (a PDK-era "pdk-version" or
+// "data_provider", say) survive untouched instead of being silently dropped
+// on write.
 func repairMetadata(metadataPath string, dryRun bool, out io.Writer) error {
+	content, err := os.ReadFile(metadataPath)
+	if err != nil {
+		return fmt.Errorf("%s: %w", metadataPath, err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(content, &raw); err != nil {
+		return fmt.Errorf("%s: %w", metadataPath, err)
+	}
+
 	meta, err := module.ReadMetadata(metadataPath)
 	if err != nil {
 		return fmt.Errorf("%s: %w", metadataPath, err)
 	}
 
 	changed := false
-	if meta.Version == "" {
-		meta.Version = "0.1.0"
-		fmt.Fprintf(out, "warning: version missing from metadata.json, defaulting to 0.1.0\n")
-		changed = true
-	}
-	if meta.Dependencies == nil {
-		meta.Dependencies = []module.Dependency{}
-		changed = true
-	}
-	if meta.Requirements == nil {
-		meta.Requirements = []module.Requirement{}
-		changed = true
-	}
-	if meta.OperatingSystem == nil {
-		meta.OperatingSystem = []module.OperatingSystem{}
-		changed = true
-	}
-	if meta.Tags == nil {
-		meta.Tags = []string{}
+	setDefault := func(key string, value any) {
+		raw[key], _ = json.Marshal(value)
 		changed = true
 	}
 
-	for _, r := range meta.Validate() {
-		fmt.Fprintf(out, "warning: %s - %s\n", r.Field, r.Message)
+	if meta.Version == "" {
+		meta.Version = "0.1.0"
+		setDefault("version", meta.Version)
+		fmt.Fprintf(out, "warning: version missing from metadata.json, defaulting to 0.1.0\n")
 	}
+	if meta.Dependencies == nil {
+		meta.Dependencies = []module.Dependency{}
+		setDefault("dependencies", meta.Dependencies)
+	}
+	if meta.Requirements == nil {
+		meta.Requirements = []module.Requirement{}
+		setDefault("requirements", meta.Requirements)
+	}
+	if meta.OperatingSystem == nil {
+		meta.OperatingSystem = []module.OperatingSystem{}
+		setDefault("operatingsystem_support", meta.OperatingSystem)
+	}
+	if meta.Tags == nil {
+		meta.Tags = []string{}
+		setDefault("tags", meta.Tags)
+	}
+
+	printValidationWarnings(out, meta.Validate())
 
 	if !changed {
 		return nil
@@ -194,7 +229,16 @@ func repairMetadata(metadataPath string, dryRun bool, out io.Writer) error {
 		return nil
 	}
 
-	if err := meta.Write(metadataPath); err != nil {
+	f, err := os.Create(metadataPath)
+	if err != nil {
+		return fmt.Errorf("failed to write repaired metadata.json: %w", err)
+	}
+	defer f.Close()
+
+	enc := json.NewEncoder(f)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(raw); err != nil {
 		return fmt.Errorf("failed to write repaired metadata.json: %w", err)
 	}
 	fmt.Fprintf(out, "repaired %s\n", metadataPath)
