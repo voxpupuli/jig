@@ -39,7 +39,12 @@ depends on what's there:
   `license`), without a safe default to fall back on. It never overwrites a
   value that's already present, so running `convert` twice is a no-op. Keys
   jig doesn't otherwise recognize (a PDK-era `pdk-version` or
-  `data_provider`, say) are preserved as-is rather than dropped.
+  `data_provider`, say) are preserved as-is rather than dropped, and the
+  rest of the file keeps its original key order — jig only appends the keys
+  it added. The pre-2014 Forge metadata format allowed
+  `operatingsystem_support` to be a bare list of OS names (e.g.
+  `["Debian", "RedHat"]`); jig modernizes that to the current object list
+  (`[{"operatingsystem": "Debian", ...}]`) instead of erroring out on it.
 - **Present and valid.** Unchanged: jig doesn't touch it.
 
 In every case except a broken `metadata.json`, jig then renders the embedded

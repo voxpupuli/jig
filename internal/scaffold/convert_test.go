@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -248,6 +249,122 @@ func TestConvertModule_RepairPreservesUnknownKeys(t *testing.T) {
 	}
 	if _, ok := raw["version"]; !ok {
 		t.Error("expected version to have been defaulted in")
+	}
+}
+
+// The pre-2014 Puppet Forge metadata format allowed operatingsystem_support
+// to be a bare list of OS names (voxpupuli/puppet-collectd v2.0.0 is a real
+// module that still ships this). It must be modernized to the current
+// object list, not crash convert with a raw json.Unmarshal type error.
+func TestConvertModule_RepairModernizesBareOperatingSystemSupport(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	original := `{
+  "name": "test-module",
+  "author": "a",
+  "license": "l",
+  "summary": "s",
+  "source": "https://example.com",
+  "operatingsystem_support": ["Debian", "RedHat"]
+}`
+	if err := os.WriteFile(metadataPath, []byte(original), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+
+	meta, err := module.ReadMetadata(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to read repaired metadata.json: %v", err)
+	}
+	if len(meta.OperatingSystem) != 2 || meta.OperatingSystem[0].Name != "Debian" || meta.OperatingSystem[1].Name != "RedHat" {
+		t.Errorf("expected operatingsystem_support modernized to [Debian, RedHat], got %+v", meta.OperatingSystem)
+	}
+}
+
+// Repairing a two-key omission shouldn't rewrite every other key's position:
+// json.Marshal on a plain map alphabetizes, which turns a minimal fix into a
+// full-file diff.
+func TestConvertModule_RepairPreservesKeyOrder(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	original := `{
+  "name": "test-module",
+  "version": "1.0.0",
+  "author": "a",
+  "license": "l",
+  "summary": "s",
+  "source": "https://example.com",
+  "dependencies": []
+}`
+	if err := os.WriteFile(metadataPath, []byte(original), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+
+	repaired, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to read repaired metadata.json: %v", err)
+	}
+
+	obj, err := newOrderedObject(repaired)
+	if err != nil {
+		t.Fatalf("repaired metadata.json is not a valid JSON object: %v", err)
+	}
+	var gotKeys []string
+	for _, f := range obj.fields {
+		gotKeys = append(gotKeys, f.Key)
+	}
+	want := []string{"name", "version", "author", "license", "summary", "source", "dependencies", "requirements", "operatingsystem_support", "tags"}
+	if !reflect.DeepEqual(gotKeys, want) {
+		t.Errorf("key order:\n got  %v\n want %v", gotKeys, want)
+	}
+}
+
+// A version_requirement like ">= 3.0.0" must survive repair byte-for-byte.
+// Regression test: marshaling the preserved raw bytes through
+// json.MarshalIndent (rather than an Encoder with SetEscapeHTML(false))
+// would silently mangle the "<"/">"/"&" characters into \u unicode escapes.
+func TestConvertModule_RepairDoesNotHTMLEscapePreservedValues(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	original := `{
+  "name": "test-module",
+  "version": "1.0.0",
+  "author": "a",
+  "license": "l",
+  "summary": "s",
+  "source": "https://example.com",
+  "dependencies": [
+    {"name": "puppetlabs-stdlib", "version_requirement": ">= 3.0.0 < 5.0.0"}
+  ]
+}`
+	if err := os.WriteFile(metadataPath, []byte(original), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+
+	repaired, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to read repaired metadata.json: %v", err)
+	}
+	if !strings.Contains(string(repaired), ">= 3.0.0 < 5.0.0") {
+		t.Errorf("expected version_requirement to survive unescaped, got:\n%s", repaired)
+	}
+	// Built from parts so this source file doesn't itself contain a literal
+	// backslash-u escape sequence: json.Marshal's default HTML escaping
+	// would turn '>' into a 6-character "\" + "u003e" sequence.
+	backslash := string(rune(0x5c))
+	if strings.Contains(string(repaired), backslash+"u003e") || strings.Contains(string(repaired), backslash+"u003c") {
+		t.Errorf("version_requirement was HTML-escaped, got:\n%s", repaired)
 	}
 }
 

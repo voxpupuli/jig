@@ -2,6 +2,7 @@
 package scaffold
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -164,35 +165,54 @@ func printValidationWarnings(out io.Writer, results []module.ValidationResult) {
 }
 
 // repairMetadata reads an existing metadata.json. A JSON parse error is
-// fatal -- jig won't guess at a broken file. Otherwise it fills in the keys
-// that have a safe default (version, and the dependencies/requirements/
-// operatingsystem_support/tags lists) when they're missing, warns about
-// validation failures it can't fix on its own, and writes the file back only
-// if something actually changed, so running convert twice is a no-op.
+// fatal -- jig won't guess at a broken file. Otherwise it modernizes the
+// pre-2014 bare-string-list form of operatingsystem_support if present,
+// fills in the keys that have a safe default (version, and the
+// dependencies/requirements/operatingsystem_support/tags lists) when
+// they're missing, warns about validation failures it can't fix on its own,
+// and writes the file back only if something actually changed, so running
+// convert twice is a no-op.
 //
-// Repair round-trips through a map[string]json.RawMessage rather than the
-// Metadata struct, so keys jig doesn't model (a PDK-era "pdk-version" or
+// Repair round-trips through an orderedObject rather than the Metadata
+// struct, so keys jig doesn't model (a PDK-era "pdk-version" or
 // "data_provider", say) survive untouched instead of being silently dropped
-// on write.
+// on write, and the rewrite doesn't reorder every key the way marshaling a
+// plain map would.
 func repairMetadata(metadataPath string, dryRun bool, out io.Writer) error {
 	content, err := os.ReadFile(metadataPath)
 	if err != nil {
 		return fmt.Errorf("%s: %w", metadataPath, err)
 	}
 
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(content, &raw); err != nil {
-		return fmt.Errorf("%s: %w", metadataPath, err)
-	}
-
-	meta, err := module.ReadMetadata(metadataPath)
+	raw, err := newOrderedObject(content)
 	if err != nil {
 		return fmt.Errorf("%s: %w", metadataPath, err)
 	}
 
 	changed := false
+
+	modernizedOS, err := modernizeOperatingSystemSupport(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", metadataPath, err)
+	}
+	if modernizedOS {
+		fmt.Fprintf(out, "warning: operatingsystem_support used the pre-2014 bare-name list format, modernized to the current object format\n")
+		changed = true
+	}
+
+	coerced, err := raw.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("%s: %w", metadataPath, err)
+	}
+
+	var meta module.Metadata
+	if err := json.Unmarshal(coerced, &meta); err != nil {
+		return fmt.Errorf("%s: %w", metadataPath, err)
+	}
+
 	setDefault := func(key string, value any) {
-		raw[key], _ = json.Marshal(value)
+		encoded, _ := marshalNoEscape(value)
+		raw.Set(key, encoded)
 		changed = true
 	}
 
@@ -229,18 +249,64 @@ func repairMetadata(metadataPath string, dryRun bool, out io.Writer) error {
 		return nil
 	}
 
-	f, err := os.Create(metadataPath)
-	if err != nil {
-		return fmt.Errorf("failed to write repaired metadata.json: %w", err)
-	}
-	defer f.Close()
-
-	enc := json.NewEncoder(f)
+	// json.MarshalIndent would re-apply HTML escaping to raw's already-decoded
+	// bytes, mangling a preserved version_requirement like ">= 3.0.0" into
+	// its >-escaped form; an Encoder with SetEscapeHTML(false) does not.
+	var pretty bytes.Buffer
+	enc := json.NewEncoder(&pretty)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(raw); err != nil {
 		return fmt.Errorf("failed to write repaired metadata.json: %w", err)
 	}
+	if err := os.WriteFile(metadataPath, pretty.Bytes(), 0644); err != nil {
+		return fmt.Errorf("failed to write repaired metadata.json: %w", err)
+	}
 	fmt.Fprintf(out, "repaired %s\n", metadataPath)
 	return nil
+}
+
+// modernizeOperatingSystemSupport rewrites the pre-2014 form of
+// operatingsystem_support -- a bare list of OS name strings, e.g.
+// ["Debian", "RedHat"] -- into the object list module.OperatingSystem
+// expects. Without this, a metadata.json from that era fails json.Unmarshal
+// with a raw Go type-mismatch error instead of being repaired. Entries that
+// are already objects (or anything jig doesn't recognize) are left alone;
+// reports whether anything changed.
+func modernizeOperatingSystemSupport(raw *orderedObject) (bool, error) {
+	value, ok := raw.Get("operatingsystem_support")
+	if !ok {
+		return false, nil
+	}
+
+	var entries []json.RawMessage
+	if err := json.Unmarshal(value, &entries); err != nil {
+		// Not a list this function understands; leave it for the normal
+		// unmarshal into Metadata to report.
+		return false, nil
+	}
+
+	changed := false
+	for i, entry := range entries {
+		var name string
+		if err := json.Unmarshal(entry, &name); err != nil {
+			continue // already an object, or something else entirely
+		}
+		modernized, err := marshalNoEscape(module.OperatingSystem{Name: name, Release: []string{}})
+		if err != nil {
+			return false, err
+		}
+		entries[i] = modernized
+		changed = true
+	}
+	if !changed {
+		return false, nil
+	}
+
+	newValue, err := marshalNoEscape(entries)
+	if err != nil {
+		return false, err
+	}
+	raw.Set("operatingsystem_support", newValue)
+	return true, nil
 }
