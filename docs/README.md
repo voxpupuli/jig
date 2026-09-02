@@ -15,7 +15,7 @@ single static binary with no Ruby runtime required.
 |---------|-------------|
 | [`jig new`](commands/new.md) | Scaffold a new module, or generate classes, defined types, facts, functions, providers, tasks, tests, and transports inside one |
 | [`jig renew`](commands/renew.md) | Re-render allowlisted module files from the latest templates |
-| [`jig convert`](commands/convert.md) | Overwrite `Gemfile`, `Rakefile`, and `spec/spec_helper.rb` in an existing module to work with voxbox and Vox Pupuli tooling |
+| [`jig convert`](commands/convert.md) | Bring an existing module (creating or repairing `metadata.json` if needed) onto the toolchain jig and voxbox expect |
 | [`jig templates`](commands/templates.md) | Dump the embedded templates to disk, or debug where a template name resolves from |
 | [`jig build`](commands/build.md) | Build a module package for the Puppet Forge |
 | [`jig release`](commands/release.md) | Validate, version, build, and publish a module release to the Forge |
