@@ -49,6 +49,10 @@ func TestConvertModule(t *testing.T) {
 			t.Errorf("File %s was created, but empty", file)
 		}
 	}
+
+	if _, err := os.Stat(filepath.Join(tmpDir, config.ModuleConfigFileName)); err != nil {
+		t.Errorf("expected jig.toml to be created even for an already-valid metadata.json: %v", err)
+	}
 }
 
 func TestConvertModule_MissingMetadata_CreatesIt(t *testing.T) {
@@ -206,6 +210,39 @@ func TestConvertModule_RepairsPartialMetadata(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Error("running convert twice should be a no-op on metadata.json")
+	}
+}
+
+// Regression test for a stock `pdk new module` checkout: metadata.json
+// exists (so ConvertModule takes the repair path, not create), and repair's
+// own warning tells the user to move template-url into jig.toml's
+// [template] section -- so jig.toml must actually exist afterward. The
+// jig.toml scaffolding used to live only in the create path.
+func TestConvertModule_RepairPath_CreatesJigToml(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	original := `{
+  "name": "acme-demopdk",
+  "version": "0.1.0",
+  "author": "root",
+  "license": "Apache-2.0",
+  "summary": "s",
+  "source": "https://example.com",
+  "dependencies": [],
+  "requirements": [],
+  "operatingsystem_support": [],
+  "template-url": "https://github.com/puppetlabs/pdk-templates"
+}`
+	if err := os.WriteFile(metadataPath, []byte(original), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(tmpDir, config.ModuleConfigFileName)); err != nil {
+		t.Errorf("expected jig.toml to be created by the repair path too: %v", err)
 	}
 }
 

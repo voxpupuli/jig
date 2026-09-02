@@ -24,11 +24,10 @@ depends on what's there:
   convention (`puppet-nftables` and `binford2k-demo` both give
   `nftables`/`demo`; a directory with no separator is used as-is). A flag
   always wins over the `Modulefile`, which always wins over your
-  [config file](../configuration.md) defaults. `jig.toml` is written too, if
-  it's also missing. jig then validates the metadata it just wrote and warns
-  about anything still missing (a `Modulefile` rarely carries a Forge
-  `source` URL, for instance) rather than leaving that for the next `jig
-  build` to discover.
+  [config file](../configuration.md) defaults. jig then validates the
+  metadata it just wrote and warns about anything still missing (a
+  `Modulefile` rarely carries a Forge `source` URL, for instance) rather
+  than leaving that for the next `jig build` to discover.
 - **Present but not valid JSON.** jig reports the parse error and stops. It
   won't guess at a broken file, and it leaves `Gemfile`, `Rakefile`, and
   `spec/spec_helper.rb` untouched.
@@ -46,6 +45,11 @@ depends on what's there:
   `["Debian", "RedHat"]`); jig modernizes that to the current object list
   (`[{"operatingsystem": "Debian", ...}]`) instead of erroring out on it.
 - **Present and valid.** Unchanged: jig doesn't touch it.
+
+In every case, including an unchanged, already-valid `metadata.json`, jig
+writes `jig.toml` too if the module doesn't already have one — including on
+the repair path, since its own warning about `template-url` points at a
+`[template]` section that has to actually exist.
 
 In every case except a broken `metadata.json`, jig then renders the embedded
 templates for these three files and overwrites the module's copies, creating

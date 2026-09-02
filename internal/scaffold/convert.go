@@ -63,6 +63,15 @@ func ConvertModule(opts ConvertOptions) error {
 		return fmt.Errorf("failed to stat %s: %w", metadataPath, err)
 	}
 
+	// jig.toml is jig's own config file, independent of whether
+	// metadata.json needed to be created or repaired -- a module with a
+	// perfectly valid but pre-jig.toml metadata.json needs one too, and
+	// repair's own "move template-url to [template] in jig.toml" warning
+	// only makes sense if that file actually exists afterward.
+	if err := ensureJigToml(opts.TargetDir, opts.DryRun, out); err != nil {
+		return err
+	}
+
 	filesToUpdate := []struct {
 		TemplatePath string
 		DestPath     string
@@ -99,9 +108,28 @@ func ConvertModule(opts ConvertOptions) error {
 	return nil
 }
 
+// ensureJigToml writes jig.toml with its default (empty) content if the
+// module doesn't already have one.
+func ensureJigToml(targetDir string, dryRun bool, out io.Writer) error {
+	jigTomlPath := filepath.Join(targetDir, config.ModuleConfigFileName)
+	if _, err := os.Stat(jigTomlPath); !os.IsNotExist(err) {
+		return err // nil when it already exists; a real stat error otherwise
+	}
+
+	if dryRun {
+		fmt.Fprintf(out, "would create %s\n", jigTomlPath)
+		return nil
+	}
+	if err := (config.ModuleConfig{}).Write(targetDir); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "created %s\n", jigTomlPath)
+	return nil
+}
+
 // createMetadata builds metadata.json from opts (filling in the module name
 // from the target directory when it wasn't already resolved from a
-// Modulefile) and writes it, along with jig.toml if that's also missing.
+// Modulefile) and writes it.
 func createMetadata(opts ConvertOptions, metadataPath string, out io.Writer) error {
 	name := opts.Name
 	if name == "" {
@@ -134,18 +162,6 @@ func createMetadata(opts ConvertOptions, metadataPath string, out io.Writer) err
 			return fmt.Errorf("failed to write metadata.json: %w", err)
 		}
 		fmt.Fprintf(out, "created %s\n", metadataPath)
-	}
-
-	jigTomlPath := filepath.Join(opts.TargetDir, config.ModuleConfigFileName)
-	if _, err := os.Stat(jigTomlPath); os.IsNotExist(err) {
-		if opts.DryRun {
-			fmt.Fprintf(out, "would create %s\n", jigTomlPath)
-		} else {
-			if err := (config.ModuleConfig{}).Write(opts.TargetDir); err != nil {
-				return err
-			}
-			fmt.Fprintf(out, "created %s\n", jigTomlPath)
-		}
 	}
 
 	if opts.HasModulefile {
