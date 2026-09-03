@@ -405,6 +405,90 @@ func TestConvertModule_RepairDoesNotHTMLEscapePreservedValues(t *testing.T) {
 	}
 }
 
+// Regression test for issue #93: a stock `pdk new module` checkout ships a
+// Gemfile.lock that resolves PDK's Gemfile, not the one convert just wrote.
+// Left in place, the first `bundle install` after convert fails resolving a
+// lockfile for a Gemfile that no longer exists.
+func TestConvertModule_RemovesStaleGemfileLock(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	if err := os.WriteFile(metadataPath, []byte(`{"name": "test-module", "version": "0.1.0", "author": "a", "license": "l", "summary": "s", "source": "https://example.com", "dependencies": [], "requirements": [], "operatingsystem_support": [], "tags": []}`), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+	lockPath := filepath.Join(tmpDir, "Gemfile.lock")
+	if err := os.WriteFile(lockPath, []byte("GEM\n  remote: https://rubygems.org/\n"), 0644); err != nil {
+		t.Fatalf("failed to write Gemfile.lock: %v", err)
+	}
+
+	var out strings.Builder
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir, Out: &out}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Error("expected stale Gemfile.lock to be removed")
+	}
+	if !strings.Contains(out.String(), "removed "+lockPath) {
+		t.Errorf("expected output to mention removing Gemfile.lock, got: %q", out.String())
+	}
+}
+
+// Dry-run must report the Gemfile.lock removal without actually touching it,
+// consistent with every other change ConvertModule makes.
+func TestConvertModule_DryRunDoesNotRemoveGemfileLock(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	if err := os.WriteFile(metadataPath, []byte(`{"name": "test-module", "version": "0.1.0", "author": "a", "license": "l", "summary": "s", "source": "https://example.com", "dependencies": [], "requirements": [], "operatingsystem_support": [], "tags": []}`), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+	lockPath := filepath.Join(tmpDir, "Gemfile.lock")
+	if err := os.WriteFile(lockPath, []byte("GEM\n"), 0644); err != nil {
+		t.Fatalf("failed to write Gemfile.lock: %v", err)
+	}
+
+	var out strings.Builder
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir, DryRun: true, Out: &out}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Error("dry-run should not remove Gemfile.lock")
+	}
+	if !strings.Contains(out.String(), "would remove "+lockPath) {
+		t.Errorf("expected dry-run output to describe removing Gemfile.lock, got: %q", out.String())
+	}
+}
+
+// The remaining PDK-era files (.sync.yml, .rubocop.yml, ...) may still hold
+// customization jig can't evaluate, so convert only warns about them rather
+// than deleting them outright.
+func TestConvertModule_WarnsAboutRemainingPDKArtifacts(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	if err := os.WriteFile(metadataPath, []byte(`{"name": "test-module", "version": "0.1.0", "author": "a", "license": "l", "summary": "s", "source": "https://example.com", "dependencies": [], "requirements": [], "operatingsystem_support": [], "tags": []}`), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+	for _, name := range []string{".sync.yml", ".pdkignore"} {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("x"), 0644); err != nil {
+			t.Fatalf("failed to write %s: %v", name, err)
+		}
+	}
+
+	var out strings.Builder
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir, Out: &out}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+
+	for _, name := range []string{".sync.yml", ".pdkignore"} {
+		if _, err := os.Stat(filepath.Join(tmpDir, name)); err != nil {
+			t.Errorf("expected %s to be left in place, got: %v", name, err)
+		}
+		if !strings.Contains(out.String(), name) {
+			t.Errorf("expected warning to mention %s, got: %q", name, out.String())
+		}
+	}
+}
+
 func TestConvertModule_DryRunChangesNothing(t *testing.T) {
 	tmpDir := t.TempDir()
 	moduleDir := filepath.Join(tmpDir, "puppet-nftables")

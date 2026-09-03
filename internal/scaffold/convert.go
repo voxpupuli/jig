@@ -8,11 +8,22 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/voxpupuli/jig/v2/internal/config"
 	"github.com/voxpupuli/jig/v2/internal/module"
 	"github.com/voxpupuli/jig/v2/internal/template"
 )
+
+// staleLockFiles are lockfiles tied to the Gemfile convert just replaced --
+// they describe a dependency set that no longer matches it, so the next
+// `bundle install` would trip over a stale lock rather than resolving fresh.
+var staleLockFiles = []string{"Gemfile.lock"}
+
+// pdkArtifacts are PDK-era files convert doesn't touch, because jig can't
+// tell whether they still hold customization worth keeping (.rubocop.yml,
+// .puppet-lint.rc) -- convert only warns that they're no longer needed.
+var pdkArtifacts = []string{".sync.yml", ".pdkignore", ".rubocop.yml", ".puppet-lint.rc", ".fixtures.yml", ".vscode"}
 
 // ConvertOptions controls ConvertModule. The metadata fields are only used
 // when metadata.json is missing from TargetDir, to seed the one jig creates;
@@ -105,7 +116,53 @@ func ConvertModule(opts ConvertOptions) error {
 		}
 	}
 
+	if err := removeStaleLockFiles(opts.TargetDir, opts.DryRun, out); err != nil {
+		return err
+	}
+	warnAboutPDKArtifacts(opts.TargetDir, out)
+
 	return nil
+}
+
+// removeStaleLockFiles deletes lockfiles left over from the Gemfile convert
+// just replaced -- they lock a dependency set that no longer matches it, so
+// bundler would fail resolving against them instead of just regenerating the
+// lock as it should.
+func removeStaleLockFiles(targetDir string, dryRun bool, out io.Writer) error {
+	for _, name := range staleLockFiles {
+		path := filepath.Join(targetDir, name)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			return fmt.Errorf("failed to stat %s: %w", path, err)
+		}
+
+		if dryRun {
+			fmt.Fprintf(out, "would remove %s\n", path)
+			continue
+		}
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("failed to remove %s: %w", path, err)
+		}
+		fmt.Fprintf(out, "removed %s\n", path)
+	}
+	return nil
+}
+
+// warnAboutPDKArtifacts reports any PDK-era files still sitting in the
+// module. jig leaves them in place rather than guessing whether they still
+// hold customization worth keeping (.rubocop.yml, .puppet-lint.rc), but
+// they're no longer used by anything jig or voxbox does.
+func warnAboutPDKArtifacts(targetDir string, out io.Writer) {
+	var found []string
+	for _, name := range pdkArtifacts {
+		if _, err := os.Stat(filepath.Join(targetDir, name)); err == nil {
+			found = append(found, name)
+		}
+	}
+	if len(found) > 0 {
+		fmt.Fprintf(out, "warning: PDK-era files no longer used by jig/voxbox, safe to remove: %s\n", strings.Join(found, ", "))
+	}
 }
 
 // ensureJigToml writes jig.toml with its default (empty) content if the
