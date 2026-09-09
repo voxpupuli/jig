@@ -59,6 +59,14 @@ templates for these three files and overwrites the module's copies, creating
 - `Rakefile`
 - `spec/spec_helper.rb`
 
+It then removes `Gemfile.lock` if present — it locks the dependency set of
+the `Gemfile` convert just replaced, so leaving it in place makes the next
+`bundle install` fail resolving a lockfile for a `Gemfile` that no longer
+exists. Other PDK-era files (`.sync.yml`, `.pdkignore`, `.rubocop.yml`,
+`.puppet-lint.rc`, `.fixtures.yml`, `.vscode/`) are left in place — jig can't
+tell whether they still hold customization worth keeping — but convert warns
+about any it finds, since none of them are used by jig or voxbox.
+
 **Flags:**
 
 | Flag | Description |
