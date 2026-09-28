@@ -213,9 +213,9 @@ func TestConvertModule_RepairsPartialMetadata(t *testing.T) {
 	}
 }
 
-// Regression test for a stock `pdk new module` checkout: metadata.json
-// exists (so ConvertModule takes the repair path, not create), and repair's
-// own warning tells the user to move template-url into jig.toml's
+// Regression test for a module with an existing metadata.json carrying a
+// jig 1.x template-url: ConvertModule takes the repair path, not create, and
+// repair's own warning tells the user to move template-url into jig.toml's
 // [template] section -- so jig.toml must actually exist afterward. The
 // jig.toml scaffolding used to live only in the create path.
 func TestConvertModule_RepairPath_CreatesJigToml(t *testing.T) {
@@ -286,6 +286,51 @@ func TestConvertModule_RepairPreservesUnknownKeys(t *testing.T) {
 	}
 	if _, ok := raw["version"]; !ok {
 		t.Error("expected version to have been defaulted in")
+	}
+}
+
+// Regression test for issue #97: PDK writes template-url and template-ref
+// alongside pdk-version for its own `pdk update` bookkeeping. Those aren't
+// jig 1.x template settings, so convert must not tell the user to move them
+// into jig.toml, and must leave them in metadata.json.
+func TestConvertModule_PDKTemplateKeysNotWarned(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	original := `{
+  "name": "acme-demopdk",
+  "version": "0.1.0",
+  "author": "root",
+  "license": "Apache-2.0",
+  "summary": "s",
+  "source": "https://example.com",
+  "dependencies": [],
+  "requirements": [],
+  "operatingsystem_support": [],
+  "tags": [],
+  "pdk-version": "3.0.0",
+  "template-url": "pdk-default#3.0.0",
+  "template-ref": "tags/3.0.0-0-g1234567"
+}`
+	if err := os.WriteFile(metadataPath, []byte(original), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+
+	var out strings.Builder
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir, Out: &out}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+	if strings.Contains(out.String(), "template settings") {
+		t.Errorf("expected no template-settings warning for PDK metadata, got:\n%s", out.String())
+	}
+
+	after, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to read metadata.json: %v", err)
+	}
+	for _, key := range []string{"pdk-version", "template-url", "template-ref"} {
+		if !strings.Contains(string(after), `"`+key+`"`) {
+			t.Errorf("expected %s to be left in metadata.json", key)
+		}
 	}
 }
 
