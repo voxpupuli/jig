@@ -4,12 +4,16 @@ package commands
 import (
 	"bufio"
 	"fmt"
+	"maps"
 	"os"
 	"os/user"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/voxpupuli/jig/v2/internal/config"
 	"github.com/voxpupuli/jig/v2/internal/scaffold"
+	"github.com/voxpupuli/jig/v2/internal/template"
 )
 
 func (a *App) newCmd() *cobra.Command {
@@ -80,6 +84,13 @@ func (a *App) newModuleCmd() *cobra.Command {
 			}
 			defer src.Cleanup()
 
+			// Checked before the interview so a mistyped --template-var
+			// fails before any questions are asked.
+			manifest, flagVars, err := loadTemplateVars(cmd.InheritedFlags(), src)
+			if err != nil {
+				return err
+			}
+
 			opts := scaffold.Options{
 				ForgeUser:      forgeUser,
 				Name:           args[0],
@@ -101,6 +112,22 @@ func (a *App) newModuleCmd() *cobra.Command {
 					return err
 				}
 			}
+
+			// Resolved after the interview, since the user config sections
+			// that apply depend on the Forge username given there.
+			globals, err := a.Config.GlobalTemplateVars(opts.ForgeUser, opts.Name)
+			if err != nil {
+				return err
+			}
+			vars, err := manifest.ResolveVars(flagVars, template.VarLayers{Global: globals})
+			if err != nil {
+				return err
+			}
+			if !skipInterview {
+				runVarInterview(manifest, vars, flagVars)
+			}
+			opts.Manifest = manifest
+			opts.Vars = vars
 
 			return scaffold.NewModule(opts)
 		},
@@ -124,6 +151,35 @@ func runModuleInterview(opts *scaffold.Options) error {
 	opts.Summary, _ = prompt("Summary of the module", opts.Summary)
 	opts.Source, _ = prompt("Source URL for the module", opts.Source)
 	return nil
+}
+
+// runVarInterview asks for each template variable declared with
+// prompt = true, except those already given with --template-var, offering
+// the resolved value as the default. An answer that doesn't fit the
+// variable's type is asked again.
+func runVarInterview(manifest template.Manifest, vars map[string]any, flagVars map[string]any) {
+	for _, name := range slices.Sorted(maps.Keys(manifest.Vars)) {
+		spec := manifest.Vars[name]
+		if !spec.Prompt {
+			continue
+		}
+		if _, given := flagVars[name]; given {
+			continue
+		}
+		question := name
+		if spec.Description != "" {
+			question = fmt.Sprintf("%s (%s)", spec.Description, name)
+		}
+		for {
+			answer, _ := prompt(question, template.FormatVarValue(vars[name]))
+			value, err := manifest.ParseVarInput(name, answer)
+			if err == nil {
+				vars[name] = value
+				break
+			}
+			fmt.Println(err)
+		}
+	}
 }
 
 func prompt(question string, defaultVal string) (string, error) {
@@ -154,10 +210,26 @@ func (a *App) componentRunE(newFn func(scaffold.ComponentOptions) error) func(*c
 		}
 		defer src.Cleanup()
 
+		// Components render with the module's recorded variables; flags
+		// override them for this run only.
+		moduleConfig, err := config.LoadModuleConfig(cwd)
+		if err != nil {
+			return err
+		}
+		manifest, flagVars, err := loadTemplateVars(cmd.InheritedFlags(), src)
+		if err != nil {
+			return err
+		}
+		vars, err := manifest.ResolveVars(flagVars, template.VarLayers{Module: moduleConfig.Template.Vars})
+		if err != nil {
+			return err
+		}
+
 		opts := scaffold.ComponentOptions{
 			Name:        args[0],
 			TemplateDir: src.Dir,
 			WorkDir:     cwd,
+			Vars:        vars,
 		}
 		return newFn(opts)
 	}

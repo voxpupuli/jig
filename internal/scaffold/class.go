@@ -48,7 +48,7 @@ func NewClass(opts ComponentOptions) error {
 		{FileName: "class/class_spec.rb", Destination: specFile},
 	}
 
-	data := struct{ Name string }{Name: className}
+	data := componentTemplateData{Name: className, Vars: opts.Vars}
 
 	fmt.Printf("creating class %s...\n", className)
 

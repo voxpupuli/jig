@@ -53,7 +53,7 @@ func NewTransport(opts ComponentOptions) error {
 	}
 
 	// Render templates and create the files
-	data := struct{ Name string }{Name: opts.Name}
+	data := componentTemplateData{Name: opts.Name, Vars: opts.Vars}
 	renderer := newRenderer(opts.TemplateDir)
 
 	templates := []TemplateFile{

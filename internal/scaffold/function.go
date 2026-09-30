@@ -50,7 +50,7 @@ func NewFunction(opts ComponentOptions) error {
 		{FileName: "function/function_spec.rb", Destination: specFile},
 	}
 
-	data := struct{ Name string }{Name: functionName}
+	data := componentTemplateData{Name: functionName, Vars: opts.Vars}
 
 	fmt.Printf("creating function %s...\n", functionName)
 

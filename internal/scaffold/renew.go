@@ -11,24 +11,30 @@ import (
 	gogitignore "github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/voxpupuli/jig/v2/internal/config"
+	"github.com/voxpupuli/jig/v2/internal/template"
 )
 
 // RenewOptions controls Renew. Paths is the [renew] allowlist from jig.toml:
 // gitignore-style globs matched against output paths relative to the module
-// root, naming the files renew may re-render and overwrite.
+// root, naming the files renew may re-render and overwrite. Manifest is the
+// template source's jig-template.toml and Vars the resolved template
+// variables.
 type RenewOptions struct {
 	ModuleDir   string
 	TemplateDir string
 	Paths       []string
 	DryRun      bool
 	Out         io.Writer
+	Manifest    template.Manifest
+	Vars        map[string]any
 }
 
 // Renew re-renders the module template tree over an existing module. Only
 // files matching the allowlist are touched: changed files are overwritten
 // (or, with DryRun, reported with a diff), files whose rendered content
 // already matches are left alone, and allowlisted files missing from the
-// module are created.
+// module are created. Allowlisted files the template no longer generates
+// (their [[files]] when rule is now false) are reported but never deleted.
 func Renew(opts RenewOptions) error {
 	out := opts.Out
 	if out == nil {
@@ -58,9 +64,11 @@ func Renew(opts RenewOptions) error {
 		Author:     meta.Author,
 		License:    meta.License,
 		ClassName:  meta.ModuleName(),
+		Vars:       opts.Vars,
 	}
 
 	renewed, upToDate := 0, 0
+	var notGenerated []string
 	for _, entry := range entries {
 		if !matcher.Match(strings.Split(entry, "/"), false) {
 			continue
@@ -70,12 +78,23 @@ func Renew(opts RenewOptions) error {
 			continue
 		}
 
+		dest := filepath.Join(opts.ModuleDir, filepath.FromSlash(entry))
+		included, err := opts.Manifest.Includes(entry, data)
+		if err != nil {
+			return err
+		}
+		if !included {
+			if _, statErr := os.Stat(dest); statErr == nil {
+				notGenerated = append(notGenerated, entry)
+			}
+			continue
+		}
+
 		rendered, err := renderer.Render("module/"+entry, data)
 		if err != nil {
 			return fmt.Errorf("failed to render template %s: %w", entry, err)
 		}
 
-		dest := filepath.Join(opts.ModuleDir, filepath.FromSlash(entry))
 		current, readErr := os.ReadFile(dest)
 		if readErr != nil && !os.IsNotExist(readErr) {
 			return fmt.Errorf("failed to read %s: %w", dest, readErr)
@@ -100,8 +119,12 @@ func Renew(opts RenewOptions) error {
 		renewed++
 	}
 
+	if len(notGenerated) > 0 {
+		fmt.Fprintf(out, "warning: the template no longer generates these files; delete them by hand if they are not needed: %s\n", strings.Join(notGenerated, ", "))
+	}
+
 	switch {
-	case renewed == 0 && upToDate == 0:
+	case renewed == 0 && upToDate == 0 && len(notGenerated) == 0:
 		fmt.Fprintln(out, "no template files match the [renew] paths allowlist in "+config.ModuleConfigFileName)
 	case opts.DryRun:
 		fmt.Fprintf(out, "%d file(s) would be renewed, %d already up to date\n", renewed, upToDate)

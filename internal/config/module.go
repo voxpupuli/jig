@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	toml "github.com/pelletier/go-toml/v2"
+	"github.com/voxpupuli/jig/v2/internal/template"
 )
 
 // ModuleConfigFileName is the per-module config file, located in the module
@@ -46,6 +47,16 @@ type ModuleTemplate struct {
 	URL    string `toml:"url,omitempty"`
 	Ref    string `toml:"ref,omitempty"`
 	Commit string `toml:"commit,omitempty"`
+	// Vars holds the module's values for the variables its templates
+	// declare. It is the source of truth for renew and for scaffolding
+	// components inside the module.
+	Vars map[string]any `toml:"vars,omitempty"`
+}
+
+// SameSource reports whether t and o record the same template source,
+// ignoring Vars.
+func (t ModuleTemplate) SameSource(o ModuleTemplate) bool {
+	return t.URL == o.URL && t.Ref == o.Ref && t.Commit == o.Commit
 }
 
 // RenewConfig controls `jig renew`. Paths is the allowlist of files (globs)
@@ -95,6 +106,9 @@ func LoadModuleConfig(dir string) (ModuleConfig, error) {
 	if err := cfg.Build.Validate(); err != nil {
 		return ModuleConfig{}, fmt.Errorf("invalid %s: %w", path, err)
 	}
+	if err := template.ValidateVars(cfg.Template.Vars); err != nil {
+		return ModuleConfig{}, fmt.Errorf("invalid [template.vars] in %s: %w", path, err)
+	}
 	return cfg, nil
 }
 
@@ -105,6 +119,9 @@ const moduleConfigHeader = `# Per-module jig configuration.
 #
 # [template]  url/ref/commit of the template repository this module was
 #             scaffolded from; later jig commands in this module default to it.
+# [template.vars]
+#             values for the variables the templates declare; jig renew and
+#             jig new <component> render with these.
 # [renew]     paths = [...] -- files jig renew may re-render and overwrite.
 #             Empty by default so nothing is overwritten accidentally.
 # [build]     action = "allow" or "deny" (default "deny") with exceptions =

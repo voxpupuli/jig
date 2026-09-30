@@ -78,9 +78,18 @@ about any it finds, since none of them are used by jig or voxbox.
 | `-S, --source` | Source URL for the module (used only if `metadata.json` must be created) |
 | `-i, --skip-interview` | Skip the interview when `metadata.json` must be created |
 | `--dry-run` | Show what would change without writing any files |
+| `-t, --template-dir`, `--template-url`, `--template-ref`, `--ssh-accept-new` | Template source to record in `jig.toml` and resolve variables against; see [template source flags](new.md#template-source-flags) |
+| `--template-var name=value` | Set a [template variable](../custom-templates.md#template-variables); repeatable |
 
-Unlike [`jig renew`](renew.md), `convert` always uses jig's embedded
-templates — it does not consult `--template-dir`, `--template-url`, or the
-module's `jig.toml`, and it does not require an allowlist. If you want
+`Gemfile`, `Rakefile`, and `spec/spec_helper.rb` always come from jig's
+embedded templates, and no allowlist is required. The template source
+(the flags above, then the module's `jig.toml`, then your config) is used
+only to record it in `jig.toml` and to resolve the template's
+[variables](../custom-templates.md#template-variables): `--template-var`
+flags first, then values already in `jig.toml`, then the
+[`[template.vars]` sections of your config](../configuration.md#template-variables),
+then the template's defaults. The result is written to
+[`[template.vars]`](../jig-toml.md#templatevars), and an existing
+`jig.toml` is rewritten only when something changed. If you want
 template-driven, allowlisted updates on an ongoing basis, set up
-[`jig renew`](renew.md) instead.
+[`jig renew`](renew.md) afterwards.

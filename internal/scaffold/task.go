@@ -56,7 +56,7 @@ func NewTask(opts ComponentOptions) error {
 		{FileName: "task/metadata.json", Destination: taskMetadataName},
 	}
 
-	data := struct{}{}
+	data := componentTemplateData{Vars: opts.Vars}
 
 	fmt.Printf("creating task %s...\n", opts.Name)
 

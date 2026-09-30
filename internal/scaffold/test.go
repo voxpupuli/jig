@@ -76,7 +76,7 @@ func NewTest(opts ComponentOptions) error {
 		{FileName: templateFile, Destination: specFile},
 	}
 
-	data := struct{ Name string }{Name: fqName}
+	data := componentTemplateData{Name: fqName, Vars: opts.Vars}
 
 	fmt.Printf("creating test for %s...\n", fqName)
 

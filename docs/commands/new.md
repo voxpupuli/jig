@@ -30,6 +30,12 @@ and full name.
 | `-f, --force` | Overwrite an existing module directory. The existing directory is backed up with a timestamp before any files are written. |
 | `-i, --skip-interview` | Skip the interactive interview and use flag values or defaults. |
 
+If the template declares [template variables](../custom-templates.md#template-variables),
+the interview also asks for those marked `prompt = true` (except ones
+given with `--template-var`), offering the value from your
+[config file](../configuration.md#template-variables) or the template's
+default. Every resolved value is recorded in the module's `jig.toml`.
+
 **Module naming:** jig validates module names against Puppet's naming
 conventions. Violations produce a warning but do not stop scaffolding.
 
@@ -176,6 +182,7 @@ The following flags are available on all `jig new` subcommands. See
 | `--template-url` | Git URL of a template repository to clone and use |
 | `--template-ref` | Branch, tag, or ref to use with `--template-url`. Defaults to the remote's default branch. |
 | `--ssh-accept-new` | Automatically trust unknown ssh host keys (like OpenSSH's `StrictHostKeyChecking=accept-new`). A changed key still fails. |
+| `--template-var name=value` | Set a [template variable](../custom-templates.md#template-variables). Repeat for more variables, or for each element of a list. The template must declare the variable. |
 
 `--template-dir` and `--template-url` are mutually exclusive, and
 `--template-ref` requires `--template-url`.
@@ -183,4 +190,6 @@ The following flags are available on all `jig new` subcommands. See
 When no flag is given, `jig new` inside an existing module uses the
 template source recorded in the module's
 [`jig.toml`](../jig-toml.md#template) — so the whole team scaffolds from
-the same templates with no flags at all.
+the same templates with no flags at all. Components render with the
+module's [`[template.vars]`](../jig-toml.md#templatevars); a
+`--template-var` overrides a value for that run only.

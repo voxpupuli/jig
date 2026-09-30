@@ -40,7 +40,7 @@ func NewFact(opts ComponentOptions) error {
 		{FileName: "fact/fact_spec.rb", Destination: factTestFileName},
 	}
 
-	data := struct{ Name string }{Name: opts.Name}
+	data := componentTemplateData{Name: opts.Name, Vars: opts.Vars}
 
 	if err := RenderTemplates(renderer, templates, data, false); err != nil {
 		return fmt.Errorf("failed to render templates: %w", err)
