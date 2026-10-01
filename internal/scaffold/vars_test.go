@@ -218,13 +218,12 @@ func TestConvertModule_RecordsTemplateVars(t *testing.T) {
 			}
 
 			err := ConvertModule(ConvertOptions{
-				TargetDir:      moduleDir,
-				Out:            &strings.Builder{},
-				TemplateURL:    "https://example.com/templates.git",
-				TemplateCommit: "abc123",
-				Manifest:       manifest,
-				FlagVars:       tc.flags,
-				GlobalVars:     globals,
+				TargetDir:   moduleDir,
+				Out:         &strings.Builder{},
+				TemplateURL: "https://example.com/templates.git",
+				Manifest:    manifest,
+				FlagVars:    tc.flags,
+				GlobalVars:  globals,
 			})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -237,8 +236,11 @@ func TestConvertModule_RecordsTemplateVars(t *testing.T) {
 			if !reflect.DeepEqual(cfg.Template.Vars, tc.want) {
 				t.Errorf("[template.vars]: got %v, want %v", cfg.Template.Vars, tc.want)
 			}
-			if cfg.Template.URL != "https://example.com/templates.git" || cfg.Template.Commit != "abc123" {
-				t.Errorf("[template] source not recorded: %+v", cfg.Template)
+			if cfg.Template.URL != "https://example.com/templates.git" {
+				t.Errorf("[template] url not recorded: %+v", cfg.Template)
+			}
+			if cfg.Template.Commit != "" {
+				t.Errorf("convert renders nothing from the template, so it must not record a commit, got %q", cfg.Template.Commit)
 			}
 		})
 	}
@@ -257,5 +259,67 @@ func TestConvertModule_LeavesUnchangedJigTomlAlone(t *testing.T) {
 	}
 	if got := readModuleFile(t, moduleDir, config.ModuleConfigFileName); got != original {
 		t.Errorf("jig.toml must be untouched, got %q", got)
+	}
+}
+
+// A list variable reads back from jig.toml as []any but resolves to
+// []string; convert must still see "nothing changed" and leave the file
+// (and its comments) alone on a second run.
+func TestConvertModule_IdempotentWithListVar(t *testing.T) {
+	manifest := template.Manifest{Vars: map[string]template.VarSpec{
+		"fixtures": {Type: template.VarTypeList, Default: []string{"a/b"}},
+		"n":        {Type: template.VarTypeInt, Default: int64(2)},
+	}}
+	moduleDir := makeModuleDir(t, "myuser", "mymodule")
+	opts := ConvertOptions{TargetDir: moduleDir, Out: &strings.Builder{}, Manifest: manifest}
+	if err := ConvertModule(opts); err != nil {
+		t.Fatalf("first convert: %v", err)
+	}
+	path := filepath.Join(moduleDir, config.ModuleConfigFileName)
+	withComment := "# keep me\n" + readModuleFile(t, moduleDir, config.ModuleConfigFileName)
+	if err := os.WriteFile(path, []byte(withComment), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+	opts.Out = &out
+	if err := ConvertModule(opts); err != nil {
+		t.Fatalf("second convert: %v", err)
+	}
+	if got := readModuleFile(t, moduleDir, config.ModuleConfigFileName); got != withComment {
+		t.Errorf("an unchanged jig.toml must not be rewritten, got %q", got)
+	}
+	if strings.Contains(out.String(), "updated") {
+		t.Errorf("output must not report an update, got %q", out.String())
+	}
+}
+
+// Changing the recorded url clears the old commit; keeping it keeps it.
+func TestConvertModule_TemplateURLAndCommit(t *testing.T) {
+	cases := []struct {
+		name       string
+		url        string
+		wantURL    string
+		wantCommit string
+	}{
+		{"no url flag keeps everything", "", "https://old.example/t.git", "old123"},
+		{"same url keeps the commit", "https://old.example/t.git", "https://old.example/t.git", "old123"},
+		{"new url clears the commit", "https://new.example/t.git", "https://new.example/t.git", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			moduleDir := makeModuleDir(t, "myuser", "mymodule")
+			writeModuleFile(t, moduleDir, config.ModuleConfigFileName, "[template]\nurl = \"https://old.example/t.git\"\ncommit = \"old123\"\n")
+			if err := ConvertModule(ConvertOptions{TargetDir: moduleDir, Out: &strings.Builder{}, TemplateURL: tc.url}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			cfg, err := config.LoadModuleConfig(moduleDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Template.URL != tc.wantURL || cfg.Template.Commit != tc.wantCommit {
+				t.Errorf("got url=%q commit=%q, want url=%q commit=%q", cfg.Template.URL, cfg.Template.Commit, tc.wantURL, tc.wantCommit)
+			}
+		})
 	}
 }

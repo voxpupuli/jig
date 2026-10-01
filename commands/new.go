@@ -84,10 +84,14 @@ func (a *App) newModuleCmd() *cobra.Command {
 			}
 			defer src.Cleanup()
 
-			// Checked before the interview so a mistyped --template-var
-			// fails before any questions are asked.
+			// Checked before the interview so a mistyped --template-var or
+			// a broken [template.vars] in the user config fails before any
+			// questions are asked.
 			manifest, flagVars, err := loadTemplateVars(cmd.InheritedFlags(), src)
 			if err != nil {
+				return err
+			}
+			if err := a.Config.ValidateTemplateVars(); err != nil {
 				return err
 			}
 
@@ -124,7 +128,7 @@ func (a *App) newModuleCmd() *cobra.Command {
 				return err
 			}
 			if !skipInterview {
-				runVarInterview(manifest, vars, flagVars)
+				runVarInterview(manifest, vars, flagVars, askStdin)
 			}
 			opts.Manifest = manifest
 			opts.Vars = vars
@@ -153,11 +157,20 @@ func runModuleInterview(opts *scaffold.Options) error {
 	return nil
 }
 
+// askFunc asks one interview question and returns the answer, or
+// defaultVal when the answer is empty.
+type askFunc func(question, defaultVal string) string
+
+func askStdin(question, defaultVal string) string {
+	answer, _ := prompt(question, defaultVal)
+	return answer
+}
+
 // runVarInterview asks for each template variable declared with
 // prompt = true, except those already given with --template-var, offering
 // the resolved value as the default. An answer that doesn't fit the
 // variable's type is asked again.
-func runVarInterview(manifest template.Manifest, vars map[string]any, flagVars map[string]any) {
+func runVarInterview(manifest template.Manifest, vars map[string]any, flagVars map[string]any, ask askFunc) {
 	for _, name := range slices.Sorted(maps.Keys(manifest.Vars)) {
 		spec := manifest.Vars[name]
 		if !spec.Prompt {
@@ -171,7 +184,7 @@ func runVarInterview(manifest template.Manifest, vars map[string]any, flagVars m
 			question = fmt.Sprintf("%s (%s)", spec.Description, name)
 		}
 		for {
-			answer, _ := prompt(question, template.FormatVarValue(vars[name]))
+			answer := ask(question, template.FormatVarValue(vars[name]))
 			value, err := manifest.ParseVarInput(name, answer)
 			if err == nil {
 				vars[name] = value

@@ -18,10 +18,11 @@ const (
 	VarTypeList   = "list"
 )
 
-// varNamePattern is the only accepted shape for a variable name. Lowercase
-// is required because the user config goes through viper, which folds keys
-// to lowercase: a camelCase name would silently stop matching the
-// template's .Vars reference.
+// varNamePattern is the only accepted shape for a variable name, so a name
+// means the same thing in flags, jig.toml, the user config, and templates.
+// Lowercase matters because a non-TOML user config goes through viper,
+// which folds keys to lowercase: a camelCase name there would silently stop
+// matching the template's .Vars reference.
 var varNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 
 // ValidateVarName rejects names that are not lowercase snake_case.
@@ -87,11 +88,18 @@ func ParseVarFlags(flags []string) (map[string][]string, error) {
 	return parsed, nil
 }
 
-// coerceString converts one command-line or interview value to the declared
-// type of spec. A list value is taken as a single element.
+// coerceString converts command-line or interview values to the declared
+// type of spec. For a list each value is one element, and empty values are
+// dropped, so `--template-var name=` gives an empty list.
 func (spec VarSpec) coerceString(name string, raw []string) (any, error) {
 	if spec.Type == VarTypeList {
-		return append([]string{}, raw...), nil
+		list := []string{}
+		for _, elem := range raw {
+			if elem != "" {
+				list = append(list, elem)
+			}
+		}
+		return list, nil
 	}
 	if len(raw) != 1 {
 		return nil, fmt.Errorf("template variable %q is a %s and takes one value, got %d", name, spec.Type, len(raw))

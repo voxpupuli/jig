@@ -198,8 +198,9 @@ when = "and .Vars.enable_test_hiera (not .Vars.minimal)"
 A file is generated unless a rule matching it evaluates to false. Rules
 work for verbatim files and empty directories (`.gitkeep`) as well as
 `.tmpl` files. They apply to the `module/` tree only. A `when` that
-evaluates to anything other than `true` or `false` (a string variable on
-its own, say) is an error, and a `when` may only use declared variables.
+evaluates to anything other than a boolean is an error, including a
+string variable holding `"true"` or an int `1`. A `when` may only use
+declared variables.
 
 ### Setting values
 
@@ -223,7 +224,8 @@ jig new module \
   mymodule
 ```
 
-Repeat `--template-var` for each element of a list. A `--template-var`
+Repeat `--template-var` for each element of a list; an empty value
+(`--template-var name=`) gives an empty list. A `--template-var`
 naming a variable the template does not declare is an error (it is
 almost always a typo). To change a module's value later, run
 `jig renew --template-var name=value`, which also saves it to `jig.toml`,

@@ -53,6 +53,18 @@ type ModuleTemplate struct {
 	Vars map[string]any `toml:"vars,omitempty"`
 }
 
+// VarsEqual reports whether a and b would be written to jig.toml the same
+// way. Comparing the serialized form matters because a list read back from
+// jig.toml is a []any while the same list after resolution is a []string.
+func VarsEqual(a, b map[string]any) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	ea, errA := toml.Marshal(a)
+	eb, errB := toml.Marshal(b)
+	return errA == nil && errB == nil && string(ea) == string(eb)
+}
+
 // SameSource reports whether t and o record the same template source,
 // ignoring Vars.
 func (t ModuleTemplate) SameSource(o ModuleTemplate) bool {

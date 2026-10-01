@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -105,7 +104,7 @@ reported, never deleted.`,
 				maps.Copy(updated.Vars, flagVars)
 			}
 			sourceChanged := !updated.SameSource(moduleConfig.Template)
-			varsChanged := !reflect.DeepEqual(updated.Vars, moduleConfig.Template.Vars)
+			varsChanged := !config.VarsEqual(updated.Vars, moduleConfig.Template.Vars)
 			if !sourceChanged && !varsChanged {
 				return nil
 			}

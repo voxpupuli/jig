@@ -261,3 +261,27 @@ func TestGlobalTemplateVars_RejectsInvalidSections(t *testing.T) {
 		})
 	}
 }
+
+// A non-TOML config passed with --config must keep loading through viper,
+// template variables included, rather than being parsed as TOML.
+func TestLoad_YAMLConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	body := "forge_username: jdoe\ntemplate:\n  vars:\n    default:\n      ci: gitlab\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path, quietLogger())
+	if err != nil {
+		t.Fatalf("a YAML config must still load, got: %v", err)
+	}
+	if cfg.ForgeUsername != "jdoe" {
+		t.Errorf("forge_username: got %q", cfg.ForgeUsername)
+	}
+	layers, err := cfg.GlobalTemplateVars("acme", "widget")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(layers) != 1 || layers[0]["ci"] != "gitlab" {
+		t.Errorf("template vars from YAML: got %v", layers)
+	}
+}

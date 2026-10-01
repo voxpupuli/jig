@@ -33,11 +33,13 @@ embedded templates, creating spec/ if it does not exist.
 
 Those three files always come from jig's embedded templates, and no
 allowlist is required. The template source (--template-dir/--template-url,
-then the module's jig.toml, then the jig config) is used only to record it
-in jig.toml and to resolve the template's variables: --template-var flags,
-then values already in jig.toml, then the [template.vars] sections of the
-jig config, then the template's defaults. The result is written to
-[template.vars] in jig.toml for jig renew and jig new to use.`,
+then template_dir from the jig config) is used only to resolve the
+template's variables and, for --template-url, to record the url and ref in
+jig.toml. A template url already recorded in jig.toml is never fetched, so
+convert works offline. Variables resolve from --template-var flags, then
+values already in jig.toml, then the [template.vars] sections of the jig
+config, then the template's defaults, and are written to [template.vars]
+in jig.toml for jig renew and jig new to use.`,
 		// A broken or invalid metadata.json is a module state worth a clear
 		// message, not a usage mistake.
 		SilenceUsage: true,
@@ -55,7 +57,9 @@ jig config, then the template's defaults. The result is written to
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			skipInterview, _ := cmd.Flags().GetBool("skip-interview")
 
-			src, err := a.resolveTemplateSource(cmd.Flags(), cwd)
+			// No module dir: a url recorded in jig.toml is deliberately not
+			// fetched, so convert never needs the network unless asked to.
+			src, err := a.resolveTemplateSource(cmd.Flags(), "")
 			if err != nil {
 				return err
 			}
@@ -64,22 +68,24 @@ jig config, then the template's defaults. The result is written to
 			if err != nil {
 				return err
 			}
+			if err := a.Config.ValidateTemplateVars(); err != nil {
+				return err
+			}
 
 			opts := scaffold.ConvertOptions{
-				TargetDir:      cwd,
-				ForgeUser:      forgeUser,
-				Author:         author,
-				License:        license,
-				Summary:        summary,
-				Source:         source,
-				DryRun:         dryRun,
-				Out:            cmd.OutOrStdout(),
-				TemplateURL:    src.URL,
-				TemplateRef:    src.Ref,
-				TemplateCommit: src.Commit,
-				Manifest:       manifest,
-				FlagVars:       flagVars,
-				GlobalVars:     a.Config.GlobalTemplateVars,
+				TargetDir:   cwd,
+				ForgeUser:   forgeUser,
+				Author:      author,
+				License:     license,
+				Summary:     summary,
+				Source:      source,
+				DryRun:      dryRun,
+				Out:         cmd.OutOrStdout(),
+				TemplateURL: src.URL,
+				TemplateRef: src.Ref,
+				Manifest:    manifest,
+				FlagVars:    flagVars,
+				GlobalVars:  a.Config.GlobalTemplateVars,
 			}
 
 			metadataPath := filepath.Join(cwd, "metadata.json")

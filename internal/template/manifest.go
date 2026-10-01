@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	tmplpkg "text/template"
 
@@ -117,7 +116,10 @@ func (m *Manifest) validate() error {
 		}
 		rule.pattern = gogitignore.ParsePattern(rule.Path, nil)
 
-		t, err := tmplpkg.New(rule.Path).Funcs(funcMap).Parse("{{ " + rule.When + " }}")
+		// The expression is wrapped in whenResult so its value is checked
+		// by type: the printed output of a string "true" and a bool true
+		// are indistinguishable.
+		t, err := tmplpkg.New(rule.Path).Funcs(funcMap).Funcs(tmplpkg.FuncMap{"whenResult": whenResult}).Parse("{{ whenResult (" + rule.When + ") }}")
 		if err != nil {
 			return fmt.Errorf("files[%d] (%s): invalid when expression %q: %w", i, rule.Path, rule.When, err)
 		}
@@ -150,16 +152,32 @@ func (m Manifest) Includes(path string, data any) (bool, error) {
 		}
 		var buf bytes.Buffer
 		if err := rule.when.Execute(&buf, data); err != nil {
+			var notBool errWhenNotBool
+			if errors.As(err, &notBool) {
+				return false, fmt.Errorf("when %q for %s must evaluate to true or false, got %v (%T)", rule.When, path, notBool.value, notBool.value)
+			}
 			return false, fmt.Errorf("evaluating when %q for %s: %w", rule.When, path, err)
 		}
-		result := strings.TrimSpace(buf.String())
-		include, err := strconv.ParseBool(result)
-		if err != nil {
-			return false, fmt.Errorf("when %q for %s must evaluate to true or false, got %q", rule.When, path, result)
-		}
-		if !include {
+		if buf.String() == "false" {
 			return false, nil
 		}
 	}
 	return true, nil
+}
+
+// errWhenNotBool reports a when expression whose value is not a bool.
+type errWhenNotBool struct{ value any }
+
+func (e errWhenNotBool) Error() string {
+	return fmt.Sprintf("not a boolean: %v (%T)", e.value, e.value)
+}
+
+// whenResult passes a when expression's value through only if it is a
+// bool, so a string "true" or an int 1 is an error rather than a match.
+func whenResult(v any) (bool, error) {
+	b, ok := v.(bool)
+	if !ok {
+		return false, errWhenNotBool{value: v}
+	}
+	return b, nil
 }

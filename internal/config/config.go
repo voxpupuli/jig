@@ -32,9 +32,9 @@ type Config struct {
 	Runner        RunnerConfig `mapstructure:"runner"`
 	// TemplateVars is the raw [template.vars] table: defaults for template
 	// variables, applied only when jig new module or jig convert first
-	// records a module's values. It is read straight from the TOML rather
-	// than through viper, which lowercases keys and would hide a
-	// non-snake_case name instead of rejecting it.
+	// records a module's values. From a TOML config it is read straight
+	// from the file rather than through viper, which lowercases keys and
+	// would hide a non-snake_case name instead of rejecting it.
 	TemplateVars map[string]any `mapstructure:"-"`
 }
 
@@ -89,15 +89,26 @@ func Load(path string, logger *logrus.Logger) (Config, error) {
 		return Config{}, err
 	}
 
-	vars, err := readTemplateVars(path)
-	if err != nil {
-		return Config{}, err
+	if isTOML(path) {
+		vars, err := readTemplateVars(path)
+		if err != nil {
+			return Config{}, err
+		}
+		config.TemplateVars = vars
+	} else if vars, ok := v.Get("template.vars").(map[string]any); ok {
+		// Other formats viper supports (--config foo.yaml) keep working;
+		// their keys arrive lowercased, so case mistakes go undetected.
+		config.TemplateVars = vars
 	}
-	config.TemplateVars = vars
 	return config, nil
 }
 
-// readTemplateVars reads the [template.vars] table from the config file,
+func isTOML(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".toml" || ext == ""
+}
+
+// readTemplateVars reads the [template.vars] table from a TOML config file,
 // preserving key case. A missing file has none.
 func readTemplateVars(path string) (map[string]any, error) {
 	content, err := os.ReadFile(path)
@@ -176,6 +187,13 @@ func (c Config) GlobalTemplateVars(author, module string) ([]map[string]any, err
 		}
 	}
 	return layers, nil
+}
+
+// ValidateTemplateVars checks the whole [template.vars] table, so commands
+// can report a mistake in it before asking any interview questions.
+func (c Config) ValidateTemplateVars() error {
+	_, err := c.GlobalTemplateVars("", "")
+	return err
 }
 
 // validateVarSection checks a section holding only variables: tables are

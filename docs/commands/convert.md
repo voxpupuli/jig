@@ -78,15 +78,19 @@ about any it finds, since none of them are used by jig or voxbox.
 | `-S, --source` | Source URL for the module (used only if `metadata.json` must be created) |
 | `-i, --skip-interview` | Skip the interview when `metadata.json` must be created |
 | `--dry-run` | Show what would change without writing any files |
-| `-t, --template-dir`, `--template-url`, `--template-ref`, `--ssh-accept-new` | Template source to record in `jig.toml` and resolve variables against; see [template source flags](new.md#template-source-flags) |
+| `-t, --template-dir`, `--template-url`, `--template-ref`, `--ssh-accept-new` | Template source to resolve variables against (a url and ref are also recorded in `jig.toml`); see [template source flags](new.md#template-source-flags) |
 | `--template-var name=value` | Set a [template variable](../custom-templates.md#template-variables); repeatable |
 
 `Gemfile`, `Rakefile`, and `spec/spec_helper.rb` always come from jig's
 embedded templates, and no allowlist is required. The template source
-(the flags above, then the module's `jig.toml`, then your config) is used
-only to record it in `jig.toml` and to resolve the template's
-[variables](../custom-templates.md#template-variables): `--template-var`
-flags first, then values already in `jig.toml`, then the
+(the flags above, then `template_dir` from your config) is used only to
+resolve the template's [variables](../custom-templates.md#template-variables)
+and, for `--template-url`, to record the url and ref in `jig.toml`. A
+template url already recorded in `jig.toml` is never fetched, so convert
+works offline; no commit is recorded either, since convert renders nothing
+from that template (the next [`jig renew`](renew.md) records one). A new
+url clears the commit recorded for the old one. Variables resolve from
+`--template-var` flags first, then values already in `jig.toml`, then the
 [`[template.vars]` sections of your config](../configuration.md#template-variables),
 then the template's defaults. The result is written to
 [`[template.vars]`](../jig-toml.md#templatevars), and an existing

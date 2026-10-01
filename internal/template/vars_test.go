@@ -78,6 +78,16 @@ func TestCoerceFlags(t *testing.T) {
 	}
 }
 
+func TestCoerceFlags_EmptyList(t *testing.T) {
+	got, err := testManifest().CoerceFlags(map[string][]string{"fixtures": {""}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(got["fixtures"], []string{}) {
+		t.Errorf("an empty value must give an empty list, got %#v", got["fixtures"])
+	}
+}
+
 // "false" must become a real boolean: as a string it would be truthy in a
 // template's if.
 func TestCoerceFlags_FalseIsFalse(t *testing.T) {

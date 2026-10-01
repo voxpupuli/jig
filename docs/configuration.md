@@ -75,6 +75,9 @@ Rules, each checked with an error naming the offending key:
   tables.
 - `default` always means the defaults section, never a Forge user.
 - Variables cannot be set through environment variables.
+- In a non-TOML config passed with `--config` (YAML, say), keys are read
+  through viper, which lowercases them, so a non-snake_case name is not
+  detected there.
 
 ## Overriding the config location
 

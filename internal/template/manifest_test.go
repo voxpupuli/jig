@@ -157,8 +157,28 @@ when = ".Vars.ci"
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	_, err = m.Includes("ci.yml", whenData{Vars: map[string]any{"ci": "gitlab"}})
-	if err == nil || !strings.Contains(err.Error(), "true or false") {
-		t.Errorf("expected a true-or-false error, got: %v", err)
+	// "true", "1" and "t" would all pass strconv.ParseBool; none is a boolean.
+	for _, value := range []string{"gitlab", "true", "1", "t"} {
+		_, err = m.Includes("ci.yml", whenData{Vars: map[string]any{"ci": value}})
+		if err == nil || !strings.Contains(err.Error(), "true or false") {
+			t.Errorf("ci=%q: expected a true-or-false error, got: %v", value, err)
+		}
+	}
+}
+
+func TestManifestIncludes_IntIsNotBoolean(t *testing.T) {
+	m, err := LoadManifest(writeManifest(t, `
+[vars.n]
+type = "int"
+
+[[files]]
+path = "a"
+when = ".Vars.n"
+`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := m.Includes("a", whenData{Vars: map[string]any{"n": int64(1)}}); err == nil {
+		t.Error("an int variable on its own must not count as a boolean")
 	}
 }

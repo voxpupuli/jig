@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 
 	"github.com/voxpupuli/jig/v2/internal/config"
@@ -49,12 +48,13 @@ type ConvertOptions struct {
 	// Modulefile, so ConvertModule can warn that it's no longer needed.
 	HasModulefile bool
 
-	// TemplateURL, TemplateRef, and TemplateCommit describe the remote
-	// template repository the module's variables were resolved against, if
-	// any; they are recorded in jig.toml's [template] section.
-	TemplateURL    string
-	TemplateRef    string
-	TemplateCommit string
+	// TemplateURL and TemplateRef name the remote template repository given
+	// on the command line, if any; they are recorded in jig.toml's
+	// [template] section. No commit is recorded: convert renders nothing
+	// from that repository, and the next jig renew records the commit it
+	// renders from.
+	TemplateURL string
+	TemplateRef string
 	// Manifest is the template source's jig-template.toml and FlagVars the
 	// --template-var values, already coerced to their declared types.
 	Manifest template.Manifest
@@ -215,10 +215,11 @@ func writeJigToml(opts ConvertOptions, out io.Writer) error {
 	}
 
 	updated := current
-	if opts.TemplateURL != "" {
+	if opts.TemplateURL != "" && (opts.TemplateURL != current.Template.URL || opts.TemplateRef != current.Template.Ref) {
 		updated.Template.URL = opts.TemplateURL
 		updated.Template.Ref = opts.TemplateRef
-		updated.Template.Commit = opts.TemplateCommit
+		// A commit recorded for another source would be wrong for this one.
+		updated.Template.Commit = ""
 	}
 	if len(vars) > 0 {
 		updated.Template.Vars = vars
@@ -232,7 +233,7 @@ func writeJigToml(opts ConvertOptions, out io.Writer) error {
 			return err
 		}
 		fmt.Fprintf(out, "created %s\n", jigTomlPath)
-	case reflect.DeepEqual(current, updated):
+	case updated.Template.SameSource(current.Template) && config.VarsEqual(updated.Template.Vars, current.Template.Vars):
 	case opts.DryRun:
 		fmt.Fprintf(out, "would update [template] in %s\n", jigTomlPath)
 	default:
