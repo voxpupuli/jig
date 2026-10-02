@@ -32,17 +32,24 @@ binary with no external runtime required.
 
 ## Installation
 
-Requires Go 1.21 or later.
+Prebuilt binaries are attached to every
+[GitHub release](https://github.com/voxpupuli/jig/releases): `.deb` and
+`.rpm` packages and `.tar.gz` archives for Linux (`amd64`, `arm64`),
+`.tar.gz` archives for macOS (Intel and Apple silicon), and a `.zip` for
+Windows, plus `sha256sums.txt`. For example, on Debian or Ubuntu:
 ```bash
-git clone https://github.com/voxpupuli/jig.git
-cd jig
-go build -o jig .
+VERSION=2.4.0
+curl -LO "https://github.com/voxpupuli/jig/releases/download/v${VERSION}/jig_${VERSION}_linux_amd64.deb"
+sudo apt install "./jig_${VERSION}_linux_amd64.deb"
 ```
 
-Move the resulting binary somewhere in your `$PATH`:
+With Go 1.25 or later, you can instead run:
 ```bash
-mv jig /usr/local/bin/
+go install github.com/voxpupuli/jig/v2@latest
 ```
+
+See the [installation guide](docs/installation.md) for per-platform
+instructions, upgrading, macOS Gatekeeper notes, and building from source.
 
 No other dependencies or runtimes needed.
 
@@ -69,6 +76,8 @@ jig release --version 1.0.0
 
 Full documentation lives in [docs/](docs/README.md):
 
+- **[Installation](docs/installation.md)** — release packages, `go install`,
+  and building from source
 - **[Commands](docs/README.md#commands)** — every subcommand:
   [`new`](docs/commands/new.md), [`renew`](docs/commands/renew.md),
   [`convert`](docs/commands/convert.md),
