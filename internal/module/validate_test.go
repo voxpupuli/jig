@@ -232,6 +232,13 @@ func TestValidate_TemplateSettingsWarn(t *testing.T) {
 		{"template-url", func(m *Metadata) { m.TemplateURL = "ssh://git@example.com/t.git" }, true},
 		{"template-ref only", func(m *Metadata) { m.TemplateRef = "main" }, true},
 		{"template-commit only", func(m *Metadata) { m.TemplateCommit = "abc123" }, true},
+		// Issue #97: PDK writes template-url/template-ref for `pdk update`;
+		// pdk-version marks them as PDK's, not jig 1.x leftovers.
+		{"pdk-written template keys", func(m *Metadata) {
+			m.TemplateURL = "pdk-default#3.0.0"
+			m.TemplateRef = "tags/3.0.0-0-g1234567"
+			m.PDKVersion = "3.0.0"
+		}, false},
 	}
 
 	for _, tc := range cases {

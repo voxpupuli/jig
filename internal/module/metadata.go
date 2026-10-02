@@ -25,13 +25,19 @@ type Metadata struct {
 	// to record which template repository the module was scaffolded from.
 	// jig 2.x records template provenance in jig.toml instead and does not
 	// support these keys; they are parsed only so their presence can be
-	// detected and warned about. Trust-related settings (like
+	// detected and warned about. PDK writes template-url and template-ref
+	// too, as its own pdk-templates bookkeeping for `pdk update`; see
+	// PDKVersion. Trust-related settings (like
 	// ssh-accept-new) deliberately never live in either file: both are
 	// shared via the module repository and must not be able to change
 	// security decisions for other users.
 	TemplateURL    string `json:"template-url,omitempty"`
 	TemplateRef    string `json:"template-ref,omitempty"`
 	TemplateCommit string `json:"template-commit,omitempty"`
+	// PDKVersion is written by PDK (and never by jig 1.x). Its presence
+	// marks the template keys above as PDK's rather than jig's, and
+	// modeling it keeps it from being dropped when jig rewrites the file.
+	PDKVersion string `json:"pdk-version,omitempty"`
 }
 
 type Dependency struct {
@@ -101,7 +107,13 @@ func (m Metadata) Write(path string) error {
 
 // HasTemplateSettings reports whether the metadata carries any of the
 // unsupported jig 1.x template keys, so callers can warn about them.
+// Metadata written by PDK carries the same keys as PDK's own template
+// bookkeeping; those belong to `pdk update`, not jig, and moving them
+// would break it, so they are not reported.
 func (m Metadata) HasTemplateSettings() bool {
+	if m.PDKVersion != "" {
+		return false
+	}
 	return m.TemplateURL != "" || m.TemplateRef != "" || m.TemplateCommit != ""
 }
 
