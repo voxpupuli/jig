@@ -31,9 +31,15 @@ any value that's already present.
 It then (re)renders Gemfile, Rakefile, and spec/spec_helper.rb from jig's
 embedded templates, creating spec/ if it does not exist.
 
-Unlike jig renew, convert always uses jig's embedded templates -- it does
-not consult --template-dir, --template-url, or the module's jig.toml, and it
-does not require an allowlist.`,
+Those three files always come from jig's embedded templates, and no
+allowlist is required. The template source (--template-dir/--template-url,
+then template_dir from the jig config) is used only to resolve the
+template's variables and, for --template-url, to record the url and ref in
+jig.toml. A template url already recorded in jig.toml is never fetched, so
+convert works offline. Variables resolve from --template-var flags, then
+values already in jig.toml, then the [template.vars] sections of the jig
+config, then the template's defaults, and are written to [template.vars]
+in jig.toml for jig renew and jig new to use.`,
 		// A broken or invalid metadata.json is a module state worth a clear
 		// message, not a usage mistake.
 		SilenceUsage: true,
@@ -51,15 +57,35 @@ does not require an allowlist.`,
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			skipInterview, _ := cmd.Flags().GetBool("skip-interview")
 
+			// No module dir: a url recorded in jig.toml is deliberately not
+			// fetched, so convert never needs the network unless asked to.
+			src, err := a.resolveTemplateSource(cmd.Flags(), "")
+			if err != nil {
+				return err
+			}
+			defer src.Cleanup()
+			manifest, flagVars, err := loadTemplateVars(cmd.Flags(), src)
+			if err != nil {
+				return err
+			}
+			if err := a.Config.ValidateTemplateVars(); err != nil {
+				return err
+			}
+
 			opts := scaffold.ConvertOptions{
-				TargetDir: cwd,
-				ForgeUser: forgeUser,
-				Author:    author,
-				License:   license,
-				Summary:   summary,
-				Source:    source,
-				DryRun:    dryRun,
-				Out:       cmd.OutOrStdout(),
+				TargetDir:   cwd,
+				ForgeUser:   forgeUser,
+				Author:      author,
+				License:     license,
+				Summary:     summary,
+				Source:      source,
+				DryRun:      dryRun,
+				Out:         cmd.OutOrStdout(),
+				TemplateURL: src.URL,
+				TemplateRef: src.Ref,
+				Manifest:    manifest,
+				FlagVars:    flagVars,
+				GlobalVars:  a.Config.GlobalTemplateVars,
 			}
 
 			metadataPath := filepath.Join(cwd, "metadata.json")
@@ -154,6 +180,7 @@ does not require an allowlist.`,
 	cmd.Flags().StringP("source", "S", "", "Source URL for the module (used only if metadata.json must be created)")
 	cmd.Flags().BoolP("skip-interview", "i", false, "Skip the interview when metadata.json must be created")
 	cmd.Flags().Bool("dry-run", false, "Show what would change without writing any files")
+	addTemplateSourceFlags(cmd)
 
 	return cmd
 }

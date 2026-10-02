@@ -51,7 +51,7 @@ func NewDefinedType(opts ComponentOptions) error {
 		{FileName: "type/defined_type_spec.rb", Destination: specFile},
 	}
 
-	data := struct{ Name string }{Name: typeName}
+	data := componentTemplateData{Name: typeName, Vars: opts.Vars}
 
 	fmt.Printf("creating defined_type %s...\n", typeName)
 

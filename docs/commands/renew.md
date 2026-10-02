@@ -30,12 +30,30 @@ jig and are never renewed.
 With `--dry-run` nothing is written; each file that would change is
 reported with a diff.
 
+## Template variables
+
+Files render with the module's
+[`[template.vars]`](../jig-toml.md#templatevars) from `jig.toml`, with the
+template's defaults for anything missing. Your user config is never read,
+so a renew gives the same result for everyone. A
+`--template-var name=value` flag overrides a value and, unless `--dry-run`
+is given, is saved to `jig.toml` so later renews keep it:
+
+```bash
+jig renew --template-var enable_junit_reporting=true
+```
+
+When a variable turns off a [conditional file](../custom-templates.md#conditional-files),
+renew lists the allowlisted files the module still has but the template
+no longer generates. It never deletes them: remove them by hand if they
+are not needed.
+
 ## Template source
 
 The template source is resolved the same way as for
 [`jig new`](new.md#template-source-flags) (it accepts the same
-`--template-dir`, `--template-url`, `--template-ref`, and
-`--ssh-accept-new` flags): flags first, then the `[template]` section of
+`--template-dir`, `--template-url`, `--template-ref`, `--ssh-accept-new`,
+and `--template-var` flags): flags first, then the `[template]` section of
 `jig.toml` — re-fetching the latest commit of the recorded ref — then
 `template_dir` from the [config file](../configuration.md).
 

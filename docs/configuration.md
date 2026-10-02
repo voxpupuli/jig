@@ -21,6 +21,11 @@ ssh_accept_new = false
 type   = "local"                            # "local" (default) or "voxbox"
 engine = "docker"                           # "docker" (default) or "podman"
 image  = "ghcr.io/voxpupuli/voxbox:latest"
+
+# Defaults for template variables when a module is created or converted.
+# See "Template variables" below.
+[template.vars.default]
+enable_junit_reporting = true
 ```
 
 ## Fields
@@ -34,6 +39,45 @@ image  = "ghcr.io/voxpupuli/voxbox:latest"
 | `template_dir` | scaffolding commands | Path to a [custom template directory](custom-templates.md) |
 | `ssh_accept_new` | remote template fetches | Trust unknown ssh host keys automatically; see [host key verification](custom-templates.md#host-key-verification) |
 | `[runner]` | `validate`, `test`, `msync` | Container runner settings; see [Running through voxbox](voxbox.md) |
+| `[template.vars]` | `new module`, `convert` | Defaults for [template variables](custom-templates.md#template-variables); see below |
+
+## Template variables
+
+`[template.vars]` holds your defaults for
+[template variables](custom-templates.md#template-variables), in three
+levels, most specific first:
+
+```toml
+[template.vars.default]            # every module
+enable_junit_reporting = true
+
+[template.vars.voxpupuli]          # modules by Forge user voxpupuli
+enable_test_hiera = true
+
+[template.vars.voxpupuli.nftables] # the module voxpupuli-nftables
+beaker_fixture_modules = ["puppetlabs/concat"]
+```
+
+These are read only when `jig new module` or `jig convert` first records
+a module's values in its [`jig.toml`](jig-toml.md#templatevars). After
+that the module's `jig.toml` wins: editing your config has no effect on
+existing modules, and `jig renew` never reads it. Precedence: a
+`--template-var` flag, then values already in `jig.toml`, then the module
+section, the author section, `default`, and finally the template's own
+default. Variables the template does not declare are ignored, since your
+config applies to every template you use.
+
+Rules, each checked with an error naming the offending key:
+
+- Variable names must be lowercase snake_case (`^[a-z][a-z0-9_]*$`).
+- Values must be strings, booleans, numbers, or lists of those. A table
+  under an author is always a module section, so variables cannot be
+  tables.
+- `default` always means the defaults section, never a Forge user.
+- Variables cannot be set through environment variables.
+- In a non-TOML config passed with `--config` (YAML, say), keys are read
+  through viper, which lowercases them, so a non-snake_case name is not
+  detected there.
 
 ## Overriding the config location
 

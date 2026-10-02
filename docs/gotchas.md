@@ -30,6 +30,14 @@ place. Each links to the full documentation.
   a cloned repository must not be able to change security behavior for
   the people who clone it. See
   [jig.toml](jig-toml.md#trust-decisions-are-never-read-from-jigtoml).
+- **Template variables in your config only apply to new or converted
+  modules.** `[template.vars]` in `config.toml` is read by `jig new module`
+  and `jig convert`, which record the values in the module's `jig.toml`;
+  after that, editing your config changes nothing for that module. See
+  [Template variables](configuration.md#template-variables).
+- **A `--template-var` the template doesn't declare is an error**, and a
+  `"false"` given on the command line is a real `false` in templates.
+  See [Setting values](custom-templates.md#setting-values).
 
 ## `renew`
 
@@ -37,8 +45,12 @@ place. Each links to the full documentation.
   in `jig.toml` is empty by default; nothing is overwritten until the
   module opts in. See [the allowlist](commands/renew.md#the-allowlist).
 - **A successful remote renew rewrites `jig.toml`**, updating the recorded
-  commit — hand-written comments in the file do not survive. See
+  commit — hand-written comments in the file do not survive. So does
+  `renew --template-var`, which saves the value. See
   [jig renew](commands/renew.md#template-source).
+- **Turning a conditional file off doesn't delete it.** `jig renew`
+  reports the files the template no longer generates; remove them by
+  hand. See [Template variables](commands/renew.md#template-variables).
 
 ## `build`
 

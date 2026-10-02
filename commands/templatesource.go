@@ -11,6 +11,7 @@ import (
 	"github.com/voxpupuli/jig/v2/internal/config"
 	"github.com/voxpupuli/jig/v2/internal/module"
 	"github.com/voxpupuli/jig/v2/internal/remote"
+	"github.com/voxpupuli/jig/v2/internal/template"
 )
 
 // templateSource is a resolved template location: a local directory (possibly
@@ -34,6 +35,27 @@ func addTemplateSourceFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("template-url", "", "Git URL of a template repository to clone and use (ssh via ssh-agent, or anonymous http(s))")
 	cmd.PersistentFlags().String("template-ref", "", "Git branch, tag, or ref to use with --template-url (default: the remote's default branch)")
 	cmd.PersistentFlags().Bool("ssh-accept-new", false, "Automatically trust unknown ssh host keys and add them to known_hosts (changed keys still fail)")
+	cmd.PersistentFlags().StringArray("template-var", nil, "Set a template variable declared in the template's jig-template.toml, as name=value (repeat the flag for more variables, or for each element of a list variable)")
+}
+
+// loadTemplateVars reads the template source's jig-template.toml and the
+// --template-var flags, converted to the types the template declares. A
+// flag naming a variable the template does not declare is an error.
+func loadTemplateVars(flags *pflag.FlagSet, src *templateSource) (template.Manifest, map[string]any, error) {
+	manifest, err := template.LoadManifest(src.Dir)
+	if err != nil {
+		return template.Manifest{}, nil, err
+	}
+	raw, _ := flags.GetStringArray("template-var")
+	parsed, err := template.ParseVarFlags(raw)
+	if err != nil {
+		return template.Manifest{}, nil, err
+	}
+	flagVars, err := manifest.CoerceFlags(parsed)
+	if err != nil {
+		return template.Manifest{}, nil, err
+	}
+	return manifest, flagVars, nil
 }
 
 // Cleanup removes the temporary clone, if any. Safe to call more than once.

@@ -35,6 +35,10 @@ type Options struct {
 	TemplateURL    string
 	TemplateRef    string
 	TemplateCommit string
+	// Manifest is the template source's jig-template.toml, and Vars the
+	// resolved template variables, recorded in jig.toml.
+	Manifest template.Manifest
+	Vars     map[string]any
 }
 
 // moduleTemplateData is the data every template in the module tree renders
@@ -45,12 +49,22 @@ type moduleTemplateData struct {
 	Author     string
 	License    string
 	ClassName  string
+	Vars       map[string]any
 }
 
 type ComponentOptions struct {
 	Name        string
 	TemplateDir string
 	WorkDir     string
+	// Vars are the resolved template variables, from jig.toml and flags.
+	Vars map[string]any
+}
+
+// componentTemplateData is the data component templates (class, fact, ...)
+// render with.
+type componentTemplateData struct {
+	Name string
+	Vars map[string]any
 }
 
 type TemplateFile struct {

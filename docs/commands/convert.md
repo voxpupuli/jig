@@ -78,9 +78,22 @@ about any it finds, since none of them are used by jig or voxbox.
 | `-S, --source` | Source URL for the module (used only if `metadata.json` must be created) |
 | `-i, --skip-interview` | Skip the interview when `metadata.json` must be created |
 | `--dry-run` | Show what would change without writing any files |
+| `-t, --template-dir`, `--template-url`, `--template-ref`, `--ssh-accept-new` | Template source to resolve variables against (a url and ref are also recorded in `jig.toml`); see [template source flags](new.md#template-source-flags) |
+| `--template-var name=value` | Set a [template variable](../custom-templates.md#template-variables); repeatable |
 
-Unlike [`jig renew`](renew.md), `convert` always uses jig's embedded
-templates — it does not consult `--template-dir`, `--template-url`, or the
-module's `jig.toml`, and it does not require an allowlist. If you want
+`Gemfile`, `Rakefile`, and `spec/spec_helper.rb` always come from jig's
+embedded templates, and no allowlist is required. The template source
+(the flags above, then `template_dir` from your config) is used only to
+resolve the template's [variables](../custom-templates.md#template-variables)
+and, for `--template-url`, to record the url and ref in `jig.toml`. A
+template url already recorded in `jig.toml` is never fetched, so convert
+works offline; no commit is recorded either, since convert renders nothing
+from that template (the next [`jig renew`](renew.md) records one). A new
+url clears the commit recorded for the old one. Variables resolve from
+`--template-var` flags first, then values already in `jig.toml`, then the
+[`[template.vars]` sections of your config](../configuration.md#template-variables),
+then the template's defaults. The result is written to
+[`[template.vars]`](../jig-toml.md#templatevars), and an existing
+`jig.toml` is rewritten only when something changed. If you want
 template-driven, allowlisted updates on an ongoing basis, set up
-[`jig renew`](renew.md) instead.
+[`jig renew`](renew.md) afterwards.

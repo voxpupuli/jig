@@ -4,6 +4,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -93,6 +94,12 @@ func TestModuleConfig_WriteRoundTrip(t *testing.T) {
 			URL:    "ssh://git@example.com/templates.git",
 			Ref:    "v2",
 			Commit: "def456",
+			Vars: map[string]any{
+				"enable_junit": true,
+				"ci_provider":  "gitlab",
+				"retries":      int64(3),
+				"fixtures":     []any{"example/one", "example/two"},
+			},
 		},
 		Renew: RenewConfig{Paths: []string{"Rakefile"}},
 		Build: BuildConfig{Action: BuildActionDeny, Exceptions: []string{"/extra.txt"}},
@@ -106,7 +113,7 @@ func TestModuleConfig_WriteRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if loaded.Template != cfg.Template {
+	if !reflect.DeepEqual(loaded.Template, cfg.Template) {
 		t.Errorf("Template: got %+v, want %+v", loaded.Template, cfg.Template)
 	}
 	if len(loaded.Renew.Paths) != 1 || loaded.Renew.Paths[0] != "Rakefile" {
@@ -125,5 +132,56 @@ func TestBuildConfigValidate(t *testing.T) {
 	}
 	if err := (BuildConfig{Action: "nope"}).Validate(); err == nil {
 		t.Error("expected error for invalid action")
+	}
+}
+
+// Invalid [template.vars] in jig.toml must fail the load with a message
+// naming the section, rather than reaching a template.
+func TestLoadModuleConfig_RejectsInvalidTemplateVars(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "camelCase name",
+			content: "[template.vars]\nenableJunit = true\n",
+			want:    "enableJunit",
+		},
+		{
+			name:    "table value",
+			content: "[template.vars.fixtures]\nrepo = \"x\"\n",
+			want:    "fixtures",
+		},
+		{
+			name:    "list of tables",
+			content: "[template.vars]\nfixtures = [{ repo = \"x\" }]\n",
+			want:    "fixtures",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, ModuleConfigFileName), []byte(tc.content), 0644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadModuleConfig(dir)
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if !strings.Contains(err.Error(), "[template.vars]") || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error should name [template.vars] and %q, got: %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestModuleTemplate_SameSourceIgnoresVars(t *testing.T) {
+	a := ModuleTemplate{URL: "u", Ref: "r", Commit: "c", Vars: map[string]any{"x": true}}
+	if !a.SameSource(ModuleTemplate{URL: "u", Ref: "r", Commit: "c"}) {
+		t.Error("same url/ref/commit must be the same source regardless of vars")
+	}
+	if a.SameSource(ModuleTemplate{URL: "u", Ref: "r", Commit: "d"}) {
+		t.Error("a different commit must not be the same source")
 	}
 }

@@ -58,6 +58,7 @@ embedded templates (run `jig templates dump` to see the full tree):
 
 ```
 templates/
+  jig-template.toml  # optional: template variables and conditional files
   module/            # mirrors the generated module exactly
     .devcontainer/
       devcontainer.json
@@ -115,6 +116,121 @@ Unlike the `module/` tree, the component directories (`class/`, `fact/`,
 `task/`, ...) use fixed file names: jig picks the file it needs and
 derives the destination from the component name you pass on the command
 line.
+
+## Template variables
+
+A template can declare variables that turn optional behavior on or off —
+JUnit reporting, a Hiera fixture tree for unit tests, extra Beaker
+fixture modules — so one template serves modules that need different
+tooling. Variables are declared in a `jig-template.toml` at the root of
+the template directory (next to `module/`):
+
+```toml
+[vars.enable_test_hiera]
+type        = "bool"                       # bool, string, int, or list
+default     = false
+description = "Generate a Hiera fixture tree for unit tests"
+prompt      = true                         # ask during jig new module
+
+[vars.beaker_fixture_modules]
+type    = "list"                           # a list of strings
+default = []
+
+[[files]]
+path = "spec/fixtures/hiera/**"
+when = ".Vars.enable_test_hiera"
+```
+
+| Field | Description |
+|-------|-------------|
+| `type` | Required: `bool`, `string`, `int`, or `list` (of strings) |
+| `default` | Value used when nothing else sets the variable; defaults to `false`, `""`, `0`, or `[]` |
+| `description` | Shown as the interview question |
+| `prompt` | Ask for the variable during the `jig new module` interview |
+
+Variable names must be lowercase snake_case (`^[a-z][a-z0-9_]*$`). The
+file is validated strictly — unknown keys, a default of the wrong type,
+and a broken `when` expression are all errors — so a mistake fails before
+any file is written. The embedded templates declare no variables.
+
+### Using variables in templates
+
+Rendered (`.tmpl`) files see the variables under `.Vars`, next to the
+usual template data (`.ModuleName` and friends in the module tree,
+`.Name` in the component templates):
+
+```erb
+RSpec.configure do |c|
+{{- if .Vars.enable_test_hiera }}
+  c.hiera_config = File.expand_path('fixtures/hiera/hiera.yaml', __dir__)
+{{- end }}
+end
+```
+
+```yaml
+{{- range .Vars.beaker_fixture_modules }}
+- {{ . }}
+{{- end }}
+```
+
+Every declared variable is always set, to its default at least, and
+booleans are real booleans, so `{{ if .Vars.x }}` behaves as expected. A
+template that uses a variable `jig-template.toml` does not declare gets
+an empty value (false in an `if`) and a warning.
+
+### Conditional files
+
+Each `[[files]]` entry makes the files matching `path` — a gitignore-style
+glob relative to the generated module, like the `[renew]` allowlist —
+depend on `when`, a Go template expression (without the `{{ }}`) that must
+evaluate to `true` or `false`:
+
+```toml
+[[files]]
+path = ".gitlab-ci.yml"
+when = 'eq .Vars.ci_provider "gitlab"'
+
+[[files]]
+path = "spec/fixtures/hiera/**"
+when = "and .Vars.enable_test_hiera (not .Vars.minimal)"
+```
+
+A file is generated unless a rule matching it evaluates to false. Rules
+work for verbatim files and empty directories (`.gitkeep`) as well as
+`.tmpl` files. They apply to the `module/` tree only. A `when` that
+evaluates to anything other than a boolean is an error, including a
+string variable holding `"true"` or an int `1`. A `when` may only use
+declared variables.
+
+### Setting values
+
+Where a variable's value comes from depends on the command:
+
+| Command | Precedence, highest first |
+|---------|---------------------------|
+| `jig new module`, `jig convert` | `--template-var` flag, interview answer, values already in `jig.toml` (convert), the [user config](configuration.md#template-variables), template default |
+| `jig renew`, `jig new <component>` | `--template-var` flag, `[template.vars]` in [`jig.toml`](jig-toml.md#templatevars), template default |
+
+`jig new module` and `jig convert` write every resolved value to the
+module's `jig.toml`, which is the source of truth from then on: renew and
+component scaffolding never read the user config, so everyone working on
+the module — and CI — renders the same output.
+
+```bash
+jig new module \
+  --template-var enable_test_hiera=true \
+  --template-var beaker_fixture_modules=puppetlabs/stdlib \
+  --template-var beaker_fixture_modules=puppetlabs/concat \
+  mymodule
+```
+
+Repeat `--template-var` for each element of a list; an empty value
+(`--template-var name=`) gives an empty list. A `--template-var`
+naming a variable the template does not declare is an error (it is
+almost always a typo). To change a module's value later, run
+`jig renew --template-var name=value`, which also saves it to `jig.toml`,
+or edit `jig.toml` directly. When a variable turns a conditional file off,
+`jig renew` reports the module's existing copy but never deletes it.
 
 ## Configuring the template directory
 

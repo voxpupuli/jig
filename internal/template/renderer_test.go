@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	tmplpkg "text/template"
 )
 
 // writeExternalTemplate creates a template file in dir at the given relative
@@ -577,4 +578,81 @@ func TestDumpTemplates(t *testing.T) {
 			t.Error("expected error writing to unwritable destination, got nil")
 		}
 	})
+}
+
+// --- template variables ---
+
+type varsData struct {
+	ModuleName string
+	Vars       map[string]any
+}
+
+// A variable the template references but the data lacks must render as
+// empty (and be false in an if) with one warning, instead of text/template's
+// "<no value>".
+func TestRender_UndeclaredVarRendersEmptyWithWarning(t *testing.T) {
+	dir := t.TempDir()
+	writeExternalTemplate(t, dir, "module/a.txt.tmpl", "[{{ .Vars.missing }}]{{ if .Vars.missing }} on{{ end }} {{ $.Vars.ci }}\n")
+	writeExternalTemplate(t, dir, "module/b.txt.tmpl", "{{ range .Vars.list }}x{{ end }}{{ .Vars.missing }}\n")
+
+	r := NewRendererWithExternalDir(dir)
+	var warnings strings.Builder
+	r.Warnings = &warnings
+
+	vars := map[string]any{"ci": "gitlab", "list": []string{"a"}}
+	data := varsData{ModuleName: "m", Vars: vars}
+
+	got, err := r.Render("module/a.txt", data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "[] gitlab\n" {
+		t.Errorf("got %q, want %q", got, "[] gitlab\n")
+	}
+	if _, err := r.Render("module/b.txt", data); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if n := strings.Count(warnings.String(), ".Vars.missing"); n != 1 {
+		t.Errorf("expected exactly one warning for .Vars.missing, got %d: %q", n, warnings.String())
+	}
+	if _, ok := vars["missing"]; ok {
+		t.Error("rendering must not modify the caller's Vars map")
+	}
+}
+
+// Declared variables render their values without any warning.
+func TestRender_DeclaredVarsNoWarning(t *testing.T) {
+	dir := t.TempDir()
+	writeExternalTemplate(t, dir, "module/a.txt.tmpl", "{{ if .Vars.junit }}junit{{ end }} {{ .ModuleName }}\n")
+
+	r := NewRendererWithExternalDir(dir)
+	var warnings strings.Builder
+	r.Warnings = &warnings
+
+	got, err := r.Render("module/a.txt", varsData{ModuleName: "m", Vars: map[string]any{"junit": true}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "junit m\n" {
+		t.Errorf("got %q", got)
+	}
+	if warnings.Len() != 0 {
+		t.Errorf("expected no warnings, got %q", warnings.String())
+	}
+}
+
+func TestVarRefs_FindsNestedAndDefinedTemplates(t *testing.T) {
+	src := `{{ define "part" }}{{ .Vars.in_define }}{{ end }}` +
+		`{{ if and .Vars.a (not .Vars.b) }}{{ range .Vars.c }}{{ $.Vars.d }}{{ end }}{{ else }}{{ with .Vars.e }}{{ . }}{{ end }}{{ end }}` +
+		`{{ template "part" . }}{{ printf "%v" (.Vars.f) }}{{ .ModuleName }}`
+	tmpl, err := tmplpkg.New("t").Funcs(funcMap).Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := varRefs(tmpl)
+	want := []string{"a", "b", "c", "d", "e", "f", "in_define"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
 }

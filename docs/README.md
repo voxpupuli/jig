@@ -36,8 +36,8 @@ single static binary with no Ruby runtime required.
   Forge credentials, defaults for the module interview, template location,
   and the container runner.
 - [Per-module configuration (`jig.toml`)](jig-toml.md) — settings committed
-  with the module: the template source it was scaffolded from, the `renew`
-  allowlist, and build packaging rules.
+  with the module: the template source it was scaffolded from, its template
+  variables, the `renew` allowlist, and build packaging rules.
 
 ## Guides
 

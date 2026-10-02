@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -23,16 +24,43 @@ const TmplSuffix = ".tmpl"
 
 type Renderer struct {
 	externalDir string
+	// Warnings receives warnings about undeclared template variables;
+	// nil means os.Stderr.
+	Warnings io.Writer
+	// warned remembers the variables already warned about, so a variable
+	// referenced by many files is reported once.
+	warned map[string]bool
 }
 
 func NewRenderer() *Renderer {
-	return &Renderer{}
+	return &Renderer{warned: map[string]bool{}}
 }
 
 func NewRendererWithExternalDir(dir string) *Renderer {
 	return &Renderer{
 		externalDir: dir,
+		warned:      map[string]bool{},
 	}
+}
+
+// funcMap holds the functions available to every template and when
+// expression.
+var funcMap = tmplpkg.FuncMap{
+	"upperFirst": func(s string) string {
+		if s == "" {
+			return ""
+		}
+		return strings.ToUpper(s[:1]) + s[1:]
+	},
+	"pascalCase": func(s string) string {
+		parts := strings.Split(s, "_")
+		for i, p := range parts {
+			if p != "" {
+				parts[i] = strings.ToUpper(p[:1]) + p[1:]
+			}
+		}
+		return strings.Join(parts, "")
+	},
 }
 
 // validateName rejects names that would escape the template directory and
@@ -238,31 +266,13 @@ func (r Renderer) Render(templateName string, data any) (string, error) {
 		return string(content), nil
 	}
 
-	funcMap := tmplpkg.FuncMap{
-		"upperFirst": func(s string) string {
-			if s == "" {
-				return ""
-			}
-			return strings.ToUpper(s[:1]) + s[1:]
-		},
-		"pascalCase": func(s string) string {
-			parts := strings.Split(s, "_")
-			for i, p := range parts {
-				if p != "" {
-					parts[i] = strings.ToUpper(p[:1]) + p[1:]
-				}
-			}
-			return strings.Join(parts, "")
-		},
-	}
-
 	t, err := tmplpkg.New(templateName).Funcs(funcMap).Parse(string(content))
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template %s: %w", templateName, err)
 	}
 
 	var buf bytes.Buffer
-	err = t.Execute(&buf, data)
+	err = t.Execute(&buf, r.fillUndeclaredVars(t, data))
 	if err != nil {
 		return "", fmt.Errorf("failed to render template %s: %w", templateName, err)
 	}

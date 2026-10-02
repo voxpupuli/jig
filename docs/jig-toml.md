@@ -14,6 +14,11 @@ url    = "ssh://git@my.git.server/jig_templates.git"
 ref    = "main"
 commit = "<commit the templates were fetched at>"
 
+# The module's values for the variables its templates declare.
+[template.vars]
+enable_test_hiera      = true
+beaker_fixture_modules = ["puppetlabs/stdlib"]
+
 # Files `jig renew` may re-render and overwrite. Empty by default so
 # nothing is overwritten accidentally.
 [renew]
@@ -39,6 +44,22 @@ updates `commit` to the commit that was fetched.
 
 See [Remote template repositories](custom-templates.md#remote-template-repositories)
 for transports, authentication, and host key handling.
+
+## `[template.vars]`
+
+The module's values for the [template variables](custom-templates.md#template-variables)
+its templates declare. [`jig new module`](commands/new.md) and
+[`jig convert`](commands/convert.md) write every resolved value here —
+including values that came from your [user config](configuration.md#template-variables)
+or the template's defaults — and from then on this section is the source
+of truth: [`jig renew`](commands/renew.md) and `jig new <component>`
+render with it and never read the user config.
+
+Values must be strings, booleans, numbers, or lists of those (no tables),
+and names must be lowercase snake_case. To change a value, edit this
+section or run `jig renew --template-var name=value`, which saves it here.
+A value for a variable the template no longer declares is kept and still
+passed to the templates.
 
 ## `[renew]`
 

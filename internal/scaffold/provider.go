@@ -62,7 +62,7 @@ func NewProvider(opts ComponentOptions) error {
 	fmt.Printf("creating provider %s...\n", opts.Name)
 
 	renderer := newRenderer(opts.TemplateDir)
-	data := struct{ Name string }{Name: opts.Name}
+	data := componentTemplateData{Name: opts.Name, Vars: opts.Vars}
 
 	if err := RenderTemplates(renderer, templates, data, false); err != nil {
 		return fmt.Errorf("failed to render templates: %w", err)

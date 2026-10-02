@@ -47,11 +47,27 @@ type ConvertOptions struct {
 	// HasModulefile records whether the options above were pre-filled from a
 	// Modulefile, so ConvertModule can warn that it's no longer needed.
 	HasModulefile bool
+
+	// TemplateURL and TemplateRef name the remote template repository given
+	// on the command line, if any; they are recorded in jig.toml's
+	// [template] section. No commit is recorded: convert renders nothing
+	// from that repository, and the next jig renew records the commit it
+	// renders from.
+	TemplateURL string
+	TemplateRef string
+	// Manifest is the template source's jig-template.toml and FlagVars the
+	// --template-var values, already coerced to their declared types.
+	Manifest template.Manifest
+	FlagVars map[string]any
+	// GlobalVars returns the user config layers for a module (see
+	// config.Config.GlobalTemplateVars); nil means none.
+	GlobalVars func(author, module string) ([]map[string]any, error)
 }
 
 // ConvertModule brings an existing module onto the toolchain jig's other
 // commands expect: it ensures metadata.json exists and is at least minimally
-// valid (creating or repairing it as needed), ensures jig.toml exists, and
+// valid (creating or repairing it as needed), ensures jig.toml exists and
+// records the template source and resolved template variables, and
 // (re)writes Gemfile, Rakefile, and spec/spec_helper.rb from jig's embedded
 // templates.
 func ConvertModule(opts ConvertOptions) error {
@@ -79,7 +95,7 @@ func ConvertModule(opts ConvertOptions) error {
 	// perfectly valid but pre-jig.toml metadata.json needs one too, and
 	// repair's own "move template-url to [template] in jig.toml" warning
 	// only makes sense if that file actually exists afterward.
-	if err := ensureJigToml(opts.TargetDir, opts.DryRun, out); err != nil {
+	if err := writeJigToml(opts, out); err != nil {
 		return err
 	}
 
@@ -165,23 +181,88 @@ func warnAboutPDKArtifacts(targetDir string, out io.Writer) {
 	}
 }
 
-// ensureJigToml writes jig.toml with its default (empty) content if the
-// module doesn't already have one.
-func ensureJigToml(targetDir string, dryRun bool, out io.Writer) error {
-	jigTomlPath := filepath.Join(targetDir, config.ModuleConfigFileName)
-	if _, err := os.Stat(jigTomlPath); !os.IsNotExist(err) {
-		return err // nil when it already exists; a real stat error otherwise
+// writeJigToml creates jig.toml if the module doesn't have one, and records
+// the template source and resolved template variables in it. Values already
+// in jig.toml win over the user config, which only fills variables the
+// module doesn't have yet. An existing jig.toml is rewritten only when
+// something changed.
+func writeJigToml(opts ConvertOptions, out io.Writer) error {
+	jigTomlPath := filepath.Join(opts.TargetDir, config.ModuleConfigFileName)
+	_, statErr := os.Stat(jigTomlPath)
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return statErr
 	}
+	exists := statErr == nil
 
-	if dryRun {
-		fmt.Fprintf(out, "would create %s\n", jigTomlPath)
-		return nil
-	}
-	if err := (config.ModuleConfig{}).Write(targetDir); err != nil {
+	current, err := config.LoadModuleConfig(opts.TargetDir)
+	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "created %s\n", jigTomlPath)
+
+	var globals []map[string]any
+	if opts.GlobalVars != nil {
+		author, moduleName, err := moduleIdentity(opts)
+		if err != nil {
+			return err
+		}
+		if globals, err = opts.GlobalVars(author, moduleName); err != nil {
+			return err
+		}
+	}
+	vars, err := opts.Manifest.ResolveVars(opts.FlagVars, template.VarLayers{Module: current.Template.Vars, Global: globals})
+	if err != nil {
+		return err
+	}
+
+	updated := current
+	if opts.TemplateURL != "" && (opts.TemplateURL != current.Template.URL || opts.TemplateRef != current.Template.Ref) {
+		updated.Template.URL = opts.TemplateURL
+		updated.Template.Ref = opts.TemplateRef
+		// A commit recorded for another source would be wrong for this one.
+		updated.Template.Commit = ""
+	}
+	if len(vars) > 0 {
+		updated.Template.Vars = vars
+	}
+
+	switch {
+	case !exists && opts.DryRun:
+		fmt.Fprintf(out, "would create %s\n", jigTomlPath)
+	case !exists:
+		if err := updated.Write(opts.TargetDir); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "created %s\n", jigTomlPath)
+	case updated.Template.SameSource(current.Template) && config.VarsEqual(updated.Template.Vars, current.Template.Vars):
+	case opts.DryRun:
+		fmt.Fprintf(out, "would update [template] in %s\n", jigTomlPath)
+	default:
+		if err := updated.Write(opts.TargetDir); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "updated [template] in %s\n", jigTomlPath)
+	}
 	return nil
+}
+
+// moduleIdentity returns the Forge author and module name the user config's
+// [template.vars.<author>.<module>] sections are matched against: from
+// metadata.json when it exists, otherwise the same way createMetadata
+// derives them.
+func moduleIdentity(opts ConvertOptions) (author, moduleName string, err error) {
+	metadataPath := filepath.Join(opts.TargetDir, "metadata.json")
+	if _, statErr := os.Stat(metadataPath); statErr == nil {
+		meta, err := module.ReadMetadata(metadataPath)
+		if err != nil {
+			return "", "", fmt.Errorf("%s: %w", metadataPath, err)
+		}
+		return meta.ForgeUsername(), meta.ModuleName(), nil
+	}
+	name := opts.Name
+	if name == "" {
+		_, name = SplitForgeName(filepath.Base(opts.TargetDir))
+	}
+	return opts.ForgeUser, name, nil
 }
 
 // createMetadata builds metadata.json from opts (filling in the module name
