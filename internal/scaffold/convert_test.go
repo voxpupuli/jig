@@ -504,16 +504,18 @@ func TestConvertModule_DryRunDoesNotRemoveGemfileLock(t *testing.T) {
 	}
 }
 
-// The remaining PDK-era files (.sync.yml, .rubocop.yml, ...) may still hold
-// customization jig can't evaluate, so convert only warns about them rather
-// than deleting them outright.
+// The remaining PDK-era files are left in place. Those the new toolchain
+// still reads (.fixtures.yml, .rubocop.yml, ...) must be flagged as still in
+// use rather than reported as safe to remove; only the PDK-only ones are.
 func TestConvertModule_WarnsAboutRemainingPDKArtifacts(t *testing.T) {
 	tmpDir := t.TempDir()
 	metadataPath := filepath.Join(tmpDir, "metadata.json")
 	if err := os.WriteFile(metadataPath, []byte(`{"name": "test-module", "version": "0.1.0", "author": "a", "license": "l", "summary": "s", "source": "https://example.com", "dependencies": [], "requirements": [], "operatingsystem_support": [], "tags": []}`), 0644); err != nil {
 		t.Fatalf("failed to write metadata.json: %v", err)
 	}
-	for _, name := range []string{".sync.yml", ".pdkignore"} {
+	stillUsed := []string{".fixtures.yml", ".rubocop.yml", ".puppet-lint.rc", ".sync.yml"}
+	removable := []string{".pdkignore"}
+	for _, name := range append(append([]string{}, stillUsed...), removable...) {
 		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("x"), 0644); err != nil {
 			t.Fatalf("failed to write %s: %v", name, err)
 		}
@@ -524,13 +526,101 @@ func TestConvertModule_WarnsAboutRemainingPDKArtifacts(t *testing.T) {
 		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
 	}
 
-	for _, name := range []string{".sync.yml", ".pdkignore"} {
+	var safeLine string
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.Contains(line, "safe to remove") {
+			safeLine = line
+		}
+	}
+	for _, name := range stillUsed {
 		if _, err := os.Stat(filepath.Join(tmpDir, name)); err != nil {
 			t.Errorf("expected %s to be left in place, got: %v", name, err)
 		}
-		if !strings.Contains(out.String(), name) {
-			t.Errorf("expected warning to mention %s, got: %q", name, out.String())
+		if !strings.Contains(out.String(), "note: "+name+" is still read by") {
+			t.Errorf("expected a note that %s is still used, got: %q", name, out.String())
 		}
+		if strings.Contains(safeLine, name) {
+			t.Errorf("%s is still used and must not be reported as safe to remove: %q", name, safeLine)
+		}
+	}
+	for _, name := range removable {
+		if _, err := os.Stat(filepath.Join(tmpDir, name)); err != nil {
+			t.Errorf("expected %s to be left in place, got: %v", name, err)
+		}
+		if !strings.Contains(safeLine, name) {
+			t.Errorf("expected %s to be reported as safe to remove, got: %q", name, out.String())
+		}
+	}
+}
+
+// A Gemfile, Rakefile, or spec_helper.rb that differs from jig's template may
+// hold customization, so convert must save it to a .orig backup before
+// overwriting it -- and never clobber a backup an earlier convert made.
+func TestConvertModule_BacksUpCustomizedFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	if err := os.WriteFile(metadataPath, []byte(`{"name": "test-module", "version": "0.1.0", "author": "a", "license": "l", "summary": "s", "source": "https://example.com", "dependencies": [], "requirements": [], "operatingsystem_support": [], "tags": []}`), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+	gemfile := filepath.Join(tmpDir, "Gemfile")
+	if err := os.WriteFile(gemfile, []byte("gem 'beaker'\n"), 0644); err != nil {
+		t.Fatalf("failed to write Gemfile: %v", err)
+	}
+	if err := os.WriteFile(gemfile+".orig", []byte("earlier backup\n"), 0644); err != nil {
+		t.Fatalf("failed to write Gemfile.orig: %v", err)
+	}
+
+	var out strings.Builder
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir, Out: &out}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+
+	if got, _ := os.ReadFile(gemfile + ".orig"); string(got) != "earlier backup\n" {
+		t.Errorf("an existing Gemfile.orig must not be overwritten, got: %q", got)
+	}
+	if got, err := os.ReadFile(gemfile + ".orig.1"); err != nil || string(got) != "gem 'beaker'\n" {
+		t.Errorf("expected the customized Gemfile saved to Gemfile.orig.1, got %q (%v)", got, err)
+	}
+	if !strings.Contains(out.String(), "saved to "+gemfile+".orig.1") {
+		t.Errorf("expected output to report the backup, got: %q", out.String())
+	}
+	if got, _ := os.ReadFile(gemfile); strings.Contains(string(got), "beaker") {
+		t.Error("expected Gemfile to be replaced with jig's template")
+	}
+
+	// Running again finds files that already match the template: nothing
+	// more to back up.
+	out.Reset()
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir, Out: &out}); err != nil {
+		t.Fatalf("second ConvertModule failed unexpectedly: %v", err)
+	}
+	if strings.Contains(out.String(), "saved to") {
+		t.Errorf("expected no backups on a second run, got: %q", out.String())
+	}
+}
+
+// Dry-run must name the backup it would make without writing it.
+func TestConvertModule_DryRunReportsBackup(t *testing.T) {
+	tmpDir := t.TempDir()
+	metadataPath := filepath.Join(tmpDir, "metadata.json")
+	if err := os.WriteFile(metadataPath, []byte(`{"name": "test-module", "version": "0.1.0", "author": "a", "license": "l", "summary": "s", "source": "https://example.com", "dependencies": [], "requirements": [], "operatingsystem_support": [], "tags": []}`), 0644); err != nil {
+		t.Fatalf("failed to write metadata.json: %v", err)
+	}
+	rakefile := filepath.Join(tmpDir, "Rakefile")
+	if err := os.WriteFile(rakefile, []byte("task :custom\n"), 0644); err != nil {
+		t.Fatalf("failed to write Rakefile: %v", err)
+	}
+
+	var out strings.Builder
+	if err := ConvertModule(ConvertOptions{TargetDir: tmpDir, DryRun: true, Out: &out}); err != nil {
+		t.Fatalf("ConvertModule failed unexpectedly: %v", err)
+	}
+
+	if _, err := os.Stat(rakefile + ".orig"); !os.IsNotExist(err) {
+		t.Error("dry-run should not write Rakefile.orig")
+	}
+	if !strings.Contains(out.String(), "would be saved to "+rakefile+".orig") {
+		t.Errorf("expected dry-run output to describe the backup, got: %q", out.String())
 	}
 }
 

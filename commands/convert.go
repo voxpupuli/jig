@@ -29,7 +29,10 @@ operatingsystem_support, tags) and warns about the rest, without overwriting
 any value that's already present.
 
 It then (re)renders Gemfile, Rakefile, and spec/spec_helper.rb from jig's
-embedded templates, creating spec/ if it does not exist.
+embedded templates, creating spec/ if it does not exist. An existing copy
+that differs from jig's version is saved to <file>.orig first (or
+<file>.orig.N if a backup is already there), so customization can be merged
+back.
 
 Those three files always come from jig's embedded templates, and no
 allowlist is required. The template source (--template-dir/--template-url,
