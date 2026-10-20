@@ -59,13 +59,35 @@ templates for these three files and overwrites the module's copies, creating
 - `Rakefile`
 - `spec/spec_helper.rb`
 
+If one of them already exists and differs from jig's version — extra gems,
+custom rake tasks, your own spec setup — convert first saves it as
+`<file>.orig` (or `<file>.orig.1`, `.orig.2`, ... if a backup from an
+earlier run is already there, so none is ever overwritten) and warns, so you
+can merge back whatever you still need. A file that already matches jig's
+version is left alone with no backup, so running `convert` twice
+doesn't pile up backups. Use `--dry-run` to see which files would be backed
+up before anything is written. Custom spec setup usually belongs in
+`spec/spec_helper_local.rb`, which jig's `spec_helper.rb` loads if it exists
+and convert never touches.
+
 It then removes `Gemfile.lock` if present — it locks the dependency set of
 the `Gemfile` convert just replaced, so leaving it in place makes the next
 `bundle install` fail resolving a lockfile for a `Gemfile` that no longer
-exists. Other PDK-era files (`.sync.yml`, `.pdkignore`, `.rubocop.yml`,
-`.puppet-lint.rc`, `.fixtures.yml`, `.vscode/`) are left in place — jig can't
-tell whether they still hold customization worth keeping — but convert warns
-about any it finds, since none of them are used by jig or voxbox.
+exists.
+
+Other PDK-era files are always left in place. Convert reports the ones it
+finds, sorted by whether the new toolchain (voxpupuli-test and
+voxpupuli-acceptance, whether you run it locally or through
+[voxbox](../voxbox.md)) still reads them:
+
+| File | Status |
+|------|--------|
+| `.fixtures.yml` | Still read by rspec-puppet's fixture setup (`rake spec_prep`); keep it. |
+| `.rubocop.yml` | Still read by rubocop; keep it. To build on voxpupuli-test's baseline instead of replacing it, add `inherit_gem: { voxpupuli-test: rubocop.yml }`. |
+| `.puppet-lint.rc` | Still read by puppet-lint; keep it. |
+| `.sync.yml` | Still read by modulesync ([`jig msync`](msync.md)) if you use it; otherwise only `pdk update` used it. |
+| `.pdkignore` | Only `pdk build` used it; safe to remove. [`jig build`](build.md) uses `[build]` in `jig.toml` instead. |
+| `.vscode/` | PDK-generated editor settings, not used by any tool; safe to remove. |
 
 **Flags:**
 

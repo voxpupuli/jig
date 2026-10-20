@@ -99,7 +99,10 @@ per-module checklist. The highlights:
 
 - [`jig convert`](commands/convert.md) overwrites `Gemfile`, `Rakefile`,
   and `spec/spec_helper.rb` with jig's versions, which is usually enough
-  to run `jig validate` and `jig test unit` on a PDK-generated module.
+  to run `jig validate` and `jig test unit` on a PDK-generated module. A
+  customized copy is saved as `<file>.orig` first, so merge back any gems
+  or rake tasks you still need. `.fixtures.yml`, `.rubocop.yml`, and
+  `.puppet-lint.rc` are still used afterwards; don't delete them.
 - [`jig validate`](commands/validate.md) mirrors `pdk validate` (syntax,
   puppet-lint, rubocop).
 - Leftover `.pdkignore` files are ignored by

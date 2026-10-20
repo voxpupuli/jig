@@ -20,10 +20,24 @@ import (
 // `bundle install` would trip over a stale lock rather than resolving fresh.
 var staleLockFiles = []string{"Gemfile.lock"}
 
-// pdkArtifacts are PDK-era files convert doesn't touch, because jig can't
-// tell whether they still hold customization worth keeping (.rubocop.yml,
-// .puppet-lint.rc) -- convert only warns that they're no longer needed.
-var pdkArtifacts = []string{".sync.yml", ".pdkignore", ".rubocop.yml", ".puppet-lint.rc", ".fixtures.yml", ".vscode"}
+// pdkArtifacts are PDK-era files convert doesn't touch. Each is either still
+// read by the voxpupuli-test toolchain convert switches the module to (so it
+// may hold customization worth keeping), or used only by PDK itself or an
+// editor and safe to remove. UsedBy names the tool that still reads it, or
+// is empty for one that's safe to remove; Hint is extra advice for adapting
+// it to the new toolchain.
+var pdkArtifacts = []struct {
+	Name   string
+	UsedBy string
+	Hint   string
+}{
+	{Name: ".fixtures.yml", UsedBy: "rspec-puppet (rake spec_prep)"},
+	{Name: ".rubocop.yml", UsedBy: "rubocop", Hint: "add `inherit_gem: { voxpupuli-test: rubocop.yml }` to build on voxpupuli-test's baseline"},
+	{Name: ".puppet-lint.rc", UsedBy: "puppet-lint"},
+	{Name: ".sync.yml", UsedBy: "modulesync (jig msync), if you use it"},
+	{Name: ".pdkignore"},
+	{Name: ".vscode"},
+}
 
 // ConvertOptions controls ConvertModule. The metadata fields are only used
 // when metadata.json is missing from TargetDir, to seed the one jig creates;
@@ -118,17 +132,8 @@ func ConvertModule(opts ConvertOptions) error {
 			return fmt.Errorf("error while parsing template %s: %w", f.TemplatePath, err)
 		}
 
-		if opts.DryRun {
-			fmt.Fprintf(out, "would write %s\n", fullDestPath)
-			continue
-		}
-
-		if err := os.MkdirAll(filepath.Dir(fullDestPath), 0755); err != nil {
-			return fmt.Errorf("error creating directory for %s: %w", fullDestPath, err)
-		}
-
-		if err := os.WriteFile(fullDestPath, []byte(content), 0644); err != nil {
-			return fmt.Errorf("error writing file %s: %w", fullDestPath, err)
+		if err := writeConvertedFile(fullDestPath, content, opts.DryRun, out); err != nil {
+			return err
 		}
 	}
 
@@ -165,19 +170,85 @@ func removeStaleLockFiles(targetDir string, dryRun bool, out io.Writer) error {
 	return nil
 }
 
-// warnAboutPDKArtifacts reports any PDK-era files still sitting in the
-// module. jig leaves them in place rather than guessing whether they still
-// hold customization worth keeping (.rubocop.yml, .puppet-lint.rc), but
-// they're no longer used by anything jig or voxbox does.
-func warnAboutPDKArtifacts(targetDir string, out io.Writer) {
-	var found []string
-	for _, name := range pdkArtifacts {
-		if _, err := os.Stat(filepath.Join(targetDir, name)); err == nil {
-			found = append(found, name)
+// writeConvertedFile writes content to path. An existing file that differs
+// from content may hold customization (extra gems, rake tasks, spec setup),
+// so it's first saved to a backup path rather than silently overwritten.
+func writeConvertedFile(path, content string, dryRun bool, out io.Writer) error {
+	existing, err := os.ReadFile(path)
+	customized := err == nil && string(existing) != content
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	var backup string
+	if customized {
+		if backup, err = backupPath(path); err != nil {
+			return err
 		}
 	}
-	if len(found) > 0 {
-		fmt.Fprintf(out, "warning: PDK-era files no longer used by jig/voxbox, safe to remove: %s\n", strings.Join(found, ", "))
+
+	if dryRun {
+		if customized {
+			fmt.Fprintf(out, "would write %s (it differs from jig's template; your version would be saved to %s)\n", path, backup)
+		} else {
+			fmt.Fprintf(out, "would write %s\n", path)
+		}
+		return nil
+	}
+
+	if customized {
+		if err := os.WriteFile(backup, existing, 0644); err != nil {
+			return fmt.Errorf("failed to back up %s: %w", path, err)
+		}
+		fmt.Fprintf(out, "warning: %s differed from jig's template; your version was saved to %s -- merge back any customization you still need\n", path, backup)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("error creating directory for %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return fmt.Errorf("error writing file %s: %w", path, err)
+	}
+	return nil
+}
+
+// backupPath returns the first of path.orig, path.orig.1, path.orig.2, ...
+// that doesn't exist yet, so a second convert never clobbers the backup the
+// first one made.
+func backupPath(path string) (string, error) {
+	candidate := path + ".orig"
+	for i := 1; ; i++ {
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate, nil
+		} else if err != nil {
+			return "", fmt.Errorf("failed to stat %s: %w", candidate, err)
+		}
+		candidate = fmt.Sprintf("%s.orig.%d", path, i)
+	}
+}
+
+// warnAboutPDKArtifacts reports any PDK-era files still sitting in the
+// module. jig leaves them all in place: the ones still read by the new
+// toolchain are flagged for review, since they may need adjusting to it, and
+// only the rest are reported as safe to remove.
+func warnAboutPDKArtifacts(targetDir string, out io.Writer) {
+	var removable []string
+	for _, a := range pdkArtifacts {
+		if _, err := os.Stat(filepath.Join(targetDir, a.Name)); err != nil {
+			continue
+		}
+		if a.UsedBy == "" {
+			removable = append(removable, a.Name)
+			continue
+		}
+		msg := fmt.Sprintf("note: %s is still read by %s, keep it", a.Name, a.UsedBy)
+		if a.Hint != "" {
+			msg += "; " + a.Hint
+		}
+		fmt.Fprintln(out, msg)
+	}
+	if len(removable) > 0 {
+		fmt.Fprintf(out, "PDK-only files no longer used, safe to remove: %s\n", strings.Join(removable, ", "))
 	}
 }
 
